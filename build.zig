@@ -16,6 +16,8 @@ pub fn build(b: *std.build.Builder) void {
     exe.setBuildMode(mode);
     //exe.linkLibC();
     exe.install();
+    exe.linkLibC();
+    exe.linkSystemLibrary("gdi32");
 
     const run_cmd = exe.run();
     run_cmd.step.dependOn(b.getInstallStep());
