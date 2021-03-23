@@ -21,7 +21,7 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
     case WM_CLOSE:
     {
         OutputDebugStringA("WM_CLOSE\n");
-        exit(0);
+        PostQuitMessage(0);
     }
     break;
 

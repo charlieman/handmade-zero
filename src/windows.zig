@@ -1,4 +1,6 @@
 const std = @import("std");
+const windows = std.os.windows;
+const GetLastError = windows.kernel32.GetLastError;
 usingnamespace std.os.windows;
 
 pub const PAINTSTRUCT = extern struct {
@@ -23,4 +25,15 @@ pub fn beginPaint(hWnd: HWND, lpPaint: *PAINTSTRUCT) ?HWND {
 pub extern "user32" fn EndPaint(hWnd: HWND, lpPaint: *PAINTSTRUCT) callconv(WINAPI) BOOL;
 pub fn endPaint(hWnd: HWND, lpPaint: *PAINTSTRUCT) bool {
     return if (EndPaint(hWnd, lpPaint) != 0) true else false;
+}
+
+pub extern "user32" fn GetClientRect(hWnd: HWND, lpRect: *RECT) callconv(WINAPI) BOOL;
+pub fn getClientRect(hWnd: HWND, lpRect: *RECT) !void {
+    const r = GetClientRect(hWnd, lpRect);
+    if (r != 0) return;
+    switch (GetLastError()) {
+        .INVALID_WINDOW_HANDLE => unreachable,
+        .INVALID_PARAMETER => unreachable,
+        else => |err| return windows.unexpectedError(err),
+    }
 }
