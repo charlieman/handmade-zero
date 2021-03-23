@@ -2,17 +2,46 @@ const std = @import("std");
 const user32 = std.os.windows.user32;
 const w = @import("windows.zig");
 const L = std.unicode.utf8ToUtf16LeStringLiteral;
-const c = @cImport({
-    @cInclude("windows.h");
-});
+// const c = @cImport({
+//     @cInclude("windows.h");
+//     @cInclude("wingdi.h");
+// });
+
+//Globals
 var running = false;
+var bitmapInfo: w.BITMAPINFO = std.mem.zeroes(w.BITMAPINFO);
+var bitmapMemory: ?*c_void = undefined;
+var bitmapHandle: ?w.HBITMAP = null;
+var device_context: ?user32.HDC = null;
 
 fn Win32ResizeDIBSection(width: i32, height: i32) void {
-
+    if (bitmapHandle != null) {
+        _ = w.DeleteObject(bitmapHandle);
+    }
+    if (device_context == null) {
+        device_context = w.createCompatibleDC(null);
+    }
+    bitmapInfo = .{
+        .bmiHeader = .{
+            .biSize = @sizeOf(w.BITMAPINFOHEADER),
+            .biWidth = width,
+            .biHeight = height,
+            .biPlanes = 1,
+            .biBitCount = 32,
+            .biCompression = w.BI_RGB,
+            .biSizeImage = 0,
+            .biXPelsPerMeter = 0,
+            .biYPelsPerMeter = 0,
+            .biClrUsed = 0,
+            .biClrImportant = 0,
+        },
+        .bmiColors = undefined,
+    };
+    bitmapHandle = w.createDIBSection(device_context.?, &bitmapInfo, w.DIB_RGB_COLORS, &bitmapMemory, null, 0).?;
 }
 
-fn Win32UpdateWindow(window_handle: user32.HWND, x: i32, y: i32, width: i32, height: i32) void {
-    
+fn Win32UpdateWindow(hdc: user32.HDC, x: i32, y: i32, width: i32, height: i32) void {
+    _ = w.stretchDIBits(hdc, x, y, width, height, x, y, width, height, &bitmapMemory, &bitmapInfo, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
 }
 
 // Responds to Windows' calls into this app
@@ -47,7 +76,7 @@ fn Win32MainWindowCallback(window_handle: user32.HWND, message: c_uint, wparam: 
             const y = paint.rcPaint.top;
             const width = paint.rcPaint.right - paint.rcPaint.left;
             const height = paint.rcPaint.bottom - paint.rcPaint.top;
-            Win32UpdateWindow(window_handle, x, y, width, height);
+            Win32UpdateWindow(context, x, y, width, height);
         },
         else => {
             return user32.defWindowProcW(window_handle, message, wparam, lparam);
@@ -92,7 +121,7 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
     };
 
     running = true;
-    while(running) {
+    while (running) {
         var message: user32.MSG = undefined;
         if (user32.getMessageW(&message, handle, 0, 0)) |_| {
             _ = user32.translateMessage(&message);

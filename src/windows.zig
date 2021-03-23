@@ -3,6 +3,12 @@ const windows = std.os.windows;
 const GetLastError = windows.kernel32.GetLastError;
 usingnamespace std.os.windows;
 
+pub const GDI_ERROR = 0xFFFFFFFF;
+pub const DIB_RGB_COLORS = 0;
+pub const SRCCOPY = 0x00CC0020;
+pub const BI_RGB = 0;
+pub const HGDIOBJ = ?*c_void;
+
 pub const PAINTSTRUCT = extern struct {
     hdc: ?HDC,
     fErase: BOOL,
@@ -11,14 +17,42 @@ pub const PAINTSTRUCT = extern struct {
     fIncUpdate: BOOL,
     rgbReserved: [32]BYTE,
 };
+pub const HBITMAP = *opaque {};
 
+pub const RGBQUAD = extern struct {
+    rgbBlue: BYTE,
+    rgbGreen: BYTE,
+    rgbRed: BYTE,
+    rgbReserved: BYTE,
+};
+
+pub const BITMAPINFOHEADER = extern struct {
+    biSize: DWORD,
+    biWidth: LONG,
+    biHeight: LONG,
+    biPlanes: WORD,
+    biBitCount: WORD,
+    biCompression: DWORD,
+    biSizeImage: DWORD,
+    biXPelsPerMeter: LONG,
+    biYPelsPerMeter: LONG,
+    biClrUsed: DWORD,
+    biClrImportant: DWORD,
+};
+
+pub const BITMAPINFO = extern struct {
+    bmiHeader: BITMAPINFOHEADER,
+    bmiColors: [1]RGBQUAD,
+};
+
+// TODO is simply changing HDC to HWND correct?
 pub extern "user32" fn PatBlt(hdc: HWND, x: c_int, y: c_int, w: c_int, h: c_int, rop: DWORD) callconv(WINAPI) BOOL;
 pub fn patBlt(hWnd: HWND, x: i32, y: i32, w: i32, h: i32, rop: u32) bool {
     return if (PatBlt(hWnd, x, y, w, h, rop) != 0) true else false;
 }
 
-pub extern "user32" fn BeginPaint(hWnd: HWND, lpPaint: *PAINTSTRUCT) callconv(WINAPI) ?HWND;
-pub fn beginPaint(hWnd: HWND, lpPaint: *PAINTSTRUCT) ?HWND {
+pub extern "user32" fn BeginPaint(hWnd: HWND, lpPaint: *PAINTSTRUCT) callconv(WINAPI) ?HDC;
+pub fn beginPaint(hWnd: HWND, lpPaint: *PAINTSTRUCT) ?HDC {
     return BeginPaint(hWnd, lpPaint);
 }
 
@@ -36,4 +70,27 @@ pub fn getClientRect(hWnd: HWND, lpRect: *RECT) !void {
         .INVALID_PARAMETER => unreachable,
         else => |err| return windows.unexpectedError(err),
     }
+}
+
+pub extern "user32" fn CreateDIBSection(hdc: HDC, pbmi: *BITMAPINFO, usage: c_uint, ppvBits: [*c]?*c_void, hSection: ?HANDLE, offset: DWORD) callconv(WINAPI) ?HBITMAP;
+pub fn createDIBSection(hdc: HDC, pbmi: *BITMAPINFO, usage: c_uint, ppvBits: [*c]?*c_void, hSection: ?HANDLE, offset: DWORD) ?HBITMAP {
+    return CreateDIBSection(hdc, pbmi, usage, ppvBits, hSection, offset);
+}
+
+pub extern "user32" fn StretchDIBits(hdc: HDC, xDest: c_int, yDest: c_int, DestWidth: c_int, DestHeight: c_int, xSrc: c_int, ySrc: c_int, SrcWidth: c_int, SrcHeight: c_int, lpBits: ?*const c_void, lpbmi: *BITMAPINFO, iUsage: c_uint, rop: DWORD) callconv(WINAPI) c_int;
+pub fn stretchDIBits(hdc: HDC, xDest: i32, yDest: i32, DestWidth: i32, DestHeight: i32, xSrc: i32, ySrc: i32, SrcWidth: i32, SrcHeight: i32, lpBits: ?*const c_void, lpbmi: *BITMAPINFO, iUsage: c_uint, rop: DWORD) !i32 {
+    const r = StretchDIBits(hdc, xDest, yDest, DestWidth, DestHeight, xSrc, ySrc, SrcWidth, SrcHeight, lpBits, lpbmi, iUsage, rop);
+    //if (r == 0) return error.SomeError;
+    if (r == GDI_ERROR) return error.GdiError;
+    return r;
+}
+
+pub extern "user32" fn DeleteObject(ho: ?LPVOID) callconv(WINAPI) BOOL;
+pub fn deleteObject(ho: ?*c_void) bool {
+    return if (DeleteObject(ho) != 0) true else false;
+}
+
+pub extern "gdi32" fn CreateCompatibleDC(hdc: ?HDC) callconv(WINAPI) ?HDC;
+pub fn createCompatibleDC(hdc: ?HDC) ?HDC {
+    return CreateCompatibleDC(hdc);
 }
