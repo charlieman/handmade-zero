@@ -1,3 +1,4 @@
 zig-cache/
 *.dll
 *.swp
+src/translated.zig

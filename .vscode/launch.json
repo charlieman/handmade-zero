@@ -5,10 +5,22 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(Windows) Launch",
+            "name": "Zig Launch",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/zig-cache/bin/handmade.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "preLaunchTask": "build",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "C Launch",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/zig-cache/bin/c_handmade.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
