@@ -1,5 +1,44 @@
 #include <windows.h>
-#include <stdio.h>
+
+#define internal static
+#define local_persist static
+#define global_variable static
+
+global_variable BOOL Running;
+
+global_variable BITMAPINFO BitmapInfo;
+global_variable void *BitmapMemory;
+global_variable HBITMAP BitmapHandle;
+global_variable HDC BitmapDeviceContext;
+
+internal void Win32ResizeDIBSection(int Width, int Height)
+{
+    if (BitmapHandle)
+    {
+        DeleteObject(BitmapHandle);
+    }
+    if (!BitmapDeviceContext)
+    {
+        BitmapDeviceContext = CreateCompatibleDC(0);
+    }
+    BitmapInfo.bmiHeader.biSize = sizeof(BitmapInfo.bmiHeader);
+    BitmapInfo.bmiHeader.biWidth = Width;
+    BitmapInfo.bmiHeader.biHeight = Height;
+    BitmapInfo.bmiHeader.biPlanes = 1;
+    BitmapInfo.bmiHeader.biBitCount = 32;
+    BitmapInfo.bmiHeader.biCompression = BI_RGB;
+
+    BitmapHandle = CreateDIBSection(BitmapDeviceContext, &BitmapInfo, DIB_RGB_COLORS, &BitmapMemory, 0, 0);
+}
+
+internal void Win32UpdateWindow(HDC hdc, int X, int Y, int Width, int Height)
+{
+    StretchDIBits(hdc,
+                  X, Y, Width, Height,
+                  X, Y, Width, Height,
+                  BitmapMemory, &BitmapInfo,
+                  DIB_RGB_COLORS, SRCCOPY);
+}
 
 LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LPARAM LParam)
 {
@@ -8,7 +47,11 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
     {
     case WM_SIZE:
     {
-        OutputDebugStringA("WM_SIZE\n");
+        RECT ClientRect;
+        GetClientRect(Window, &ClientRect);
+        int Width = ClientRect.right - ClientRect.left;
+        int Height = ClientRect.bottom - ClientRect.top;
+        Win32ResizeDIBSection(Width, Height);
     }
     break;
 
@@ -36,14 +79,12 @@ LRESULT CALLBACK MainWindowCallback(HWND Window, UINT Message, WPARAM WParam, LP
     {
         PAINTSTRUCT Paint;
         HDC DeviceContext = BeginPaint(Window, &Paint);
-        LONG X = Paint.rcPaint.left;
-        LONG Y = Paint.rcPaint.top;
-        LONG W = Paint.rcPaint.right - Paint.rcPaint.left;
-        LONG H = Paint.rcPaint.bottom - Paint.rcPaint.top;
-        LONG HalfWidth = W / 2;
+        int X = Paint.rcPaint.left;
+        int Y = Paint.rcPaint.top;
+        int W = Paint.rcPaint.right - Paint.rcPaint.left;
+        int H = Paint.rcPaint.bottom - Paint.rcPaint.top;
 
-        PatBlt(DeviceContext, X, Y, HalfWidth, H, WHITENESS);
-        PatBlt(DeviceContext, X + HalfWidth, Y, HalfWidth, H, BLACKNESS);
+        Win32UpdateWindow(DeviceContext, X, Y, W, H);
         EndPaint(Window, &Paint);
     }
     break;
@@ -64,8 +105,6 @@ int CALLBACK WinMain(
     LPSTR CommandLine,
     int ShowCode)
 {
-    puts("Hello world from puts\n");
-    OutputDebugStringA("hello from OutputDebugStringA\n");
     WNDCLASS WindowClass = {0};
     WindowClass.lpfnWndProc = MainWindowCallback;
     WindowClass.hInstance = Instance;
@@ -73,7 +112,6 @@ int CALLBACK WinMain(
 
     if (RegisterClassA(&WindowClass) == 0)
     {
-        puts("RegisterClassA == 0\n");
         OutputDebugStringA("RegisterClassA == 0\n");
         return 1;
     }
@@ -86,7 +124,6 @@ int CALLBACK WinMain(
         Instance, 0);
     if (WindowHandle == 0)
     {
-        puts("WindowHandle == 0\n");
         OutputDebugStringA("WindowHandle == 0\n");
         return 2;
     }
@@ -101,7 +138,6 @@ int CALLBACK WinMain(
         }
         else
         {
-            puts("MessageResult <= 0\n");
             OutputDebugStringA("MessageResult <= 0\n");
             break;
         }
