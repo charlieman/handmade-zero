@@ -1,47 +1,85 @@
 const std = @import("std");
 const user32 = std.os.windows.user32;
 const w = @import("windows.zig");
+const windows = std.os.windows;
 const L = std.unicode.utf8ToUtf16LeStringLiteral;
 // const c = @cImport({
 //     @cInclude("windows.h");
 //     @cInclude("wingdi.h");
 // });
+const allocator = std.heap.page_allocator;
 
 //Globals
 var running = false;
 var bitmapInfo: w.BITMAPINFO = std.mem.zeroes(w.BITMAPINFO);
-var bitmapMemory: ?*c_void = undefined;
-var bitmapHandle: ?w.HBITMAP = null;
-var device_context: ?user32.HDC = null;
+var BitmapMemory: ?*c_void = @import("std").mem.zeroes(?*c_void);
+//var bitmapMemory: ?[]u8 = null;
+var bitmapWidth: i32 = undefined;
+var bitmapHeight: i32 = undefined;
+const bytesPerPixel = 4;
 
-fn Win32ResizeDIBSection(width: i32, height: i32) void {
-    if (bitmapHandle != null) {
-        _ = w.DeleteObject(bitmapHandle);
+var sent: i32 = 20;
+fn RenderWeirdGradient(xOffset: i32, yOffset: i32) void {
+    const width = bitmapWidth;
+    const pitch = width * bytesPerPixel;
+
+    // TODO: This is directly translated from C, how to do it in Zig?
+    //var i: usize = 0;
+    var Row: [*c]u8 = @ptrCast([*c]u8, @alignCast(@alignOf(u8), BitmapMemory));
+    var y: i32 = 0;
+    while (y < bitmapHeight) : (y += 1) {
+        var Pixel: [*c]u8 = Row;
+        var x: i32 = 0;
+        while (x < bitmapWidth) : (x += 1) {
+            // const b = @bitCast(u8, @truncate(i8, x));
+            // const g = @bitCast(u8, @truncate(i8, y));
+            // bitmapMemory.?[i] = b;
+            // bitmapMemory.?[i+1] = g;
+            // bitmapMemory.?[i+2] = 0;
+            // bitmapMemory.?[i+3] = 0;
+            // i += bytesPerPixel;
+            Pixel.?.* = @bitCast(u8, @truncate(i8, x + xOffset));
+            Pixel += 1;
+            Pixel.?.* = @bitCast(u8, @truncate(i8, y + yOffset));
+            Pixel += 1;
+            Pixel.?.* = 0;
+            Pixel += 1;
+            Pixel.?.* = 0;
+            Pixel += 1;
+        }
+        Row += @bitCast(usize, @intCast(isize, pitch));
     }
-    if (device_context == null) {
-        device_context = w.createCompatibleDC(null);
-    }
-    bitmapInfo = .{
-        .bmiHeader = .{
-            .biSize = @sizeOf(w.BITMAPINFOHEADER),
-            .biWidth = width,
-            .biHeight = height,
-            .biPlanes = 1,
-            .biBitCount = 32,
-            .biCompression = w.BI_RGB,
-            .biSizeImage = 0,
-            .biXPelsPerMeter = 0,
-            .biYPelsPerMeter = 0,
-            .biClrUsed = 0,
-            .biClrImportant = 0,
-        },
-        .bmiColors = undefined,
-    };
-    bitmapHandle = w.createDIBSection(device_context.?, &bitmapInfo, w.DIB_RGB_COLORS, &bitmapMemory, null, 0).?;
 }
 
-fn Win32UpdateWindow(hdc: user32.HDC, x: i32, y: i32, width: i32, height: i32) void {
-    _ = w.stretchDIBits(hdc, x, y, width, height, x, y, width, height, &bitmapMemory, &bitmapInfo, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
+fn Win32ResizeDIBSection(width: i32, height: i32) void {
+    // if (bitmapMemory != null) {
+    //     allocator.free(bitmapMemory.?);
+    //     bitmapMemory = null;
+    // }
+    if (BitmapMemory != null) {
+        _ = windows.VirtualFree(BitmapMemory.?, 0, windows.MEM_RELEASE);
+    }
+    bitmapWidth = width;
+    bitmapHeight = height;
+
+    bitmapInfo.bmiHeader.biSize = @sizeOf(w.BITMAPINFOHEADER);
+    bitmapInfo.bmiHeader.biWidth = width;
+    bitmapInfo.bmiHeader.biHeight = height;
+    bitmapInfo.bmiHeader.biPlanes = 1;
+    bitmapInfo.bmiHeader.biBitCount = 32;
+    bitmapInfo.bmiHeader.biCompression = w.BI_RGB;
+
+    const bitmapMemorySize: usize = @intCast(usize, width * height * bytesPerPixel);
+    //bitmapMemory = allocator.alloc(u8, bitmapMemorySize) catch unreachable;
+    BitmapMemory = windows.VirtualAlloc(null, bitmapMemorySize, windows.MEM_COMMIT | windows.MEM_RESERVE, windows.PAGE_READWRITE) catch unreachable;
+    RenderWeirdGradient(0, 0);
+}
+
+fn Win32UpdateWindow(hdc: user32.HDC, windowRect: *user32.RECT, x: i32, y: i32, width: i32, height: i32) void {
+    //_ = w.stretchDIBits(hdc, x, y, width, height, x, y, width, height, &bitmapMemory, &bitmapInfo, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
+    const windowindowsidth = windowRect.right - windowRect.left;
+    const windowHeight = windowRect.bottom - windowRect.top;
+    _ = w.stretchDIBits(hdc, 0, 0, bitmapWidth, bitmapHeight, 0, 0, windowindowsidth, windowHeight, BitmapMemory, &bitmapInfo, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
 }
 
 // Responds to Windows' calls into this app
@@ -76,7 +114,7 @@ fn Win32MainWindowCallback(window_handle: user32.HWND, message: c_uint, wparam: 
             const y = paint.rcPaint.top;
             const width = paint.rcPaint.right - paint.rcPaint.left;
             const height = paint.rcPaint.bottom - paint.rcPaint.top;
-            Win32UpdateWindow(context, x, y, width, height);
+            Win32UpdateWindow(context, &paint.rcPaint, x, y, width, height);
         },
         else => {
             return user32.defWindowProcW(window_handle, message, wparam, lparam);

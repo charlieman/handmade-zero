@@ -80,7 +80,8 @@ pub fn createDIBSection(hdc: HDC, pbmi: *BITMAPINFO, usage: c_uint, ppvBits: [*c
 pub extern "user32" fn StretchDIBits(hdc: HDC, xDest: c_int, yDest: c_int, DestWidth: c_int, DestHeight: c_int, xSrc: c_int, ySrc: c_int, SrcWidth: c_int, SrcHeight: c_int, lpBits: ?*const c_void, lpbmi: *BITMAPINFO, iUsage: c_uint, rop: DWORD) callconv(WINAPI) c_int;
 pub fn stretchDIBits(hdc: HDC, xDest: i32, yDest: i32, DestWidth: i32, DestHeight: i32, xSrc: i32, ySrc: i32, SrcWidth: i32, SrcHeight: i32, lpBits: ?*const c_void, lpbmi: *BITMAPINFO, iUsage: c_uint, rop: DWORD) !i32 {
     const r = StretchDIBits(hdc, xDest, yDest, DestWidth, DestHeight, xSrc, ySrc, SrcWidth, SrcHeight, lpBits, lpbmi, iUsage, rop);
-    //if (r == 0) return error.SomeError;
+    // TODO: check if we should really return an error if r == 0
+    // if (r == 0) return error.SomeError;
     if (r == GDI_ERROR) return error.GdiError;
     return r;
 }
