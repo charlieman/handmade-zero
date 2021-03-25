@@ -175,21 +175,34 @@ int CALLBACK WinMain(
         OutputDebugStringA("WindowHandle == 0\n");
         return 2;
     }
+    int8 XOffset = 0;
+    int8 YOffset = 0;
     Running = 1;
     while (Running)
     {
         MSG Message;
-        BOOL MessageResult = GetMessageA(&Message, WindowHandle, 0, 0);
-        if (MessageResult > 0)
+        while (PeekMessage(&Message, WindowHandle, 0, 0, PM_REMOVE))
         {
+            if (Message.message == WM_QUIT)
+            {
+                Running = 0;
+            }
             TranslateMessage(&Message);
             DispatchMessage(&Message);
         }
-        else
-        {
-            OutputDebugStringA("MessageResult <= 0\n");
-            break;
-        }
+        RenderWeirdGradient(XOffset, YOffset);
+
+        HDC DeviceContext = GetDC(WindowHandle);
+
+        RECT ClientRect;
+        GetClientRect(WindowHandle, &ClientRect);
+        int Width = ClientRect.right - ClientRect.left;
+        int Height = ClientRect.bottom - ClientRect.top;
+        Win32UpdateWindow(DeviceContext, &ClientRect, 0, 0, Width, Height);
+        ReleaseDC(WindowHandle, DeviceContext);
+
+        ++XOffset;
+        ++YOffset;
     }
     return 0;
 }

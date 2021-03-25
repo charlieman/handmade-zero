@@ -64,15 +64,21 @@ fn Win32ResizeDIBSection(width: i32, height: i32) void {
 
     bitmapInfo.bmiHeader.biSize = @sizeOf(w.BITMAPINFOHEADER);
     bitmapInfo.bmiHeader.biWidth = width;
-    bitmapInfo.bmiHeader.biHeight = height;
+    bitmapInfo.bmiHeader.biHeight = -height;
     bitmapInfo.bmiHeader.biPlanes = 1;
     bitmapInfo.bmiHeader.biBitCount = 32;
     bitmapInfo.bmiHeader.biCompression = w.BI_RGB;
 
     const bitmapMemorySize: usize = @intCast(usize, width * height * bytesPerPixel);
     //bitmapMemory = allocator.alloc(u8, bitmapMemorySize) catch unreachable;
+    if (bitmapMemorySize == 0) {
+        // window is minimized
+        BitmapMemory = null;
+        return;
+    }
     BitmapMemory = windows.VirtualAlloc(null, bitmapMemorySize, windows.MEM_COMMIT | windows.MEM_RESERVE, windows.PAGE_READWRITE) catch unreachable;
-    RenderWeirdGradient(0, 0);
+
+    // TODO: clear to black?
 }
 
 fn Win32UpdateWindow(hdc: user32.HDC, windowRect: *user32.RECT, x: i32, y: i32, width: i32, height: i32) void {
@@ -159,17 +165,34 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
     };
 
     running = true;
+    var xOffset:i8 = 0;
+    var yOffset:i8 = 0;
     while (running) {
         var message: user32.MSG = undefined;
-        if (user32.getMessageW(&message, handle, 0, 0)) |_| {
+        while (user32.peekMessageW(&message, handle, 0, 0, user32.PM_REMOVE)) |more_messages| {
+            if (!more_messages)  break;
+            if (message.message == user32.WM_QUIT) {
+                running = false;
+            }
             _ = user32.translateMessage(&message);
             _ = user32.dispatchMessageW(&message);
         } else |err| {
-            if (err != error.Quit) {
-                std.debug.print("error getMessageW: {}", .{err});
-                return 1;
-            }
+            std.debug.print("error getMessageW: {}", .{err});
+            return 1;
         }
+        RenderWeirdGradient(xOffset, yOffset);
+
+        const device_context = user32.getDC(handle) catch unreachable;
+        defer _ = user32.ReleaseDC(handle, device_context);
+
+        var clientRect: user32.RECT = undefined;
+        _ = w.getClientRect(handle, &clientRect) catch unreachable;
+        const windowWidth = clientRect.right - clientRect.left;
+        const windowHeight = clientRect.bottom - clientRect.top;
+
+        Win32UpdateWindow(device_context, &clientRect, 0, 0, windowWidth, windowHeight);
+        xOffset +%= 1;
+        yOffset +%= 1;
     }
     return 0;
 }
