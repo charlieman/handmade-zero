@@ -28,7 +28,7 @@ fn RenderWeirdGradient(xOffset: i32, yOffset: i32) void {
     var Row: [*c]u8 = @ptrCast([*c]u8, @alignCast(@alignOf(u8), BitmapMemory));
     var y: i32 = 0;
     while (y < bitmapHeight) : (y += 1) {
-        var Pixel: [*c]u8 = Row;
+        var Pixel: [*c]u32 = @ptrCast([*c]u32, @alignCast(@alignOf(u32), Row));
         var x: i32 = 0;
         while (x < bitmapWidth) : (x += 1) {
             // const b = @bitCast(u8, @truncate(i8, x));
@@ -38,13 +38,9 @@ fn RenderWeirdGradient(xOffset: i32, yOffset: i32) void {
             // bitmapMemory.?[i+2] = 0;
             // bitmapMemory.?[i+3] = 0;
             // i += bytesPerPixel;
-            Pixel.?.* = @bitCast(u8, @truncate(i8, x + xOffset));
-            Pixel += 1;
-            Pixel.?.* = @bitCast(u8, @truncate(i8, y + yOffset));
-            Pixel += 1;
-            Pixel.?.* = 0;
-            Pixel += 1;
-            Pixel.?.* = 0;
+            var blue: u8 = @bitCast(u8, @truncate(i8, x + xOffset));
+            var green: u8 = @bitCast(u8, @truncate(i8, y + xOffset));
+            Pixel.?.* = (@intCast(u32, green) << 8) | blue;
             Pixel += 1;
         }
         Row += @bitCast(usize, @intCast(isize, pitch));
@@ -99,6 +95,10 @@ fn Win32MainWindowCallback(window_handle: user32.HWND, message: c_uint, wparam: 
             const width = clientRect.right - clientRect.left;
             const height = clientRect.bottom - clientRect.top;
             Win32ResizeDIBSection(width, height);
+            // TODO: screen goes black while resizing.
+            // calling RenderWeirdGradient fixes this but
+            // we would have to make the offsets global
+            // RenderWeirdGradient(0,0);
         },
         user32.WM_ACTIVATE => {
             std.debug.print("WM_ACTIVATE\n", .{});

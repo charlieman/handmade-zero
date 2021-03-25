@@ -31,7 +31,7 @@ internal void RenderWeirdGradient(int XOffset, int YOffset)
     for (int Y = 0; Y < BitmapHeight; ++Y)
     {
         //uint32 *Pixel = (uint32 *)Row;
-        uint8 *Pixel = (uint8 *)Row;
+        uint32 *Pixel = (uint32 *)Row;
         for (int X = 0; X < BitmapWidth; ++X)
         {
             /*
@@ -39,14 +39,9 @@ internal void RenderWeirdGradient(int XOffset, int YOffset)
             Pixel in memory: 00 00 00 00
             RGB Order:       BB GG RR XX (little endian architecture)
             */
-            *Pixel = (uint8)(X + XOffset);
-            ++Pixel;
-            *Pixel = (uint8)(Y + YOffset);
-            ++Pixel;
-            *Pixel = 0;
-            ++Pixel;
-            *Pixel = 0;
-            ++Pixel;
+            uint8 Blue = X + XOffset;
+            uint8 Green = Y + YOffset;
+            *Pixel++ = ((Green << 8) | Blue);
         }
         Row += Pitch;
     }
