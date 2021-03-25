@@ -12,8 +12,7 @@ const allocator = std.heap.page_allocator;
 //Globals
 var running = false;
 var bitmapInfo: w.BITMAPINFO = std.mem.zeroes(w.BITMAPINFO);
-var BitmapMemory: ?*c_void = @import("std").mem.zeroes(?*c_void);
-//var bitmapMemory: ?[]u8 = null;
+var bitmapMemory: ?*c_void = @import("std").mem.zeroes(?*c_void);
 var bitmapWidth: i32 = undefined;
 var bitmapHeight: i32 = undefined;
 const bytesPerPixel = 4;
@@ -21,39 +20,27 @@ const bytesPerPixel = 4;
 var sent: i32 = 20;
 fn RenderWeirdGradient(xOffset: i32, yOffset: i32) void {
     const width = bitmapWidth;
-    const pitch = width * bytesPerPixel;
+    const pitch = @intCast(usize, width * bytesPerPixel);
 
     // TODO: This is directly translated from C, how to do it in Zig?
-    //var i: usize = 0;
-    var Row: [*c]u8 = @ptrCast([*c]u8, @alignCast(@alignOf(u8), BitmapMemory));
+    var row: [*c]u8 = @ptrCast([*c]u8, @alignCast(@alignOf(u8), bitmapMemory));
     var y: i32 = 0;
     while (y < bitmapHeight) : (y += 1) {
-        var Pixel: [*c]u32 = @ptrCast([*c]u32, @alignCast(@alignOf(u32), Row));
+        var pixel: [*c]u32 = @ptrCast([*c]u32, @alignCast(@alignOf(u32), row));
         var x: i32 = 0;
         while (x < bitmapWidth) : (x += 1) {
-            // const b = @bitCast(u8, @truncate(i8, x));
-            // const g = @bitCast(u8, @truncate(i8, y));
-            // bitmapMemory.?[i] = b;
-            // bitmapMemory.?[i+1] = g;
-            // bitmapMemory.?[i+2] = 0;
-            // bitmapMemory.?[i+3] = 0;
-            // i += bytesPerPixel;
             var blue: u8 = @bitCast(u8, @truncate(i8, x + xOffset));
             var green: u8 = @bitCast(u8, @truncate(i8, y + xOffset));
-            Pixel.?.* = (@intCast(u32, green) << 8) | blue;
-            Pixel += 1;
+            pixel.?.* = (@intCast(u32, green) << 8) | blue;
+            pixel += 1;
         }
-        Row += @bitCast(usize, @intCast(isize, pitch));
+        row += pitch;
     }
 }
 
 fn Win32ResizeDIBSection(width: i32, height: i32) void {
-    // if (bitmapMemory != null) {
-    //     allocator.free(bitmapMemory.?);
-    //     bitmapMemory = null;
-    // }
-    if (BitmapMemory != null) {
-        _ = windows.VirtualFree(BitmapMemory.?, 0, windows.MEM_RELEASE);
+    if (bitmapMemory != null) {
+        _ = windows.VirtualFree(bitmapMemory.?, 0, windows.MEM_RELEASE);
     }
     bitmapWidth = width;
     bitmapHeight = height;
@@ -66,32 +53,31 @@ fn Win32ResizeDIBSection(width: i32, height: i32) void {
     bitmapInfo.bmiHeader.biCompression = w.BI_RGB;
 
     const bitmapMemorySize: usize = @intCast(usize, width * height * bytesPerPixel);
-    //bitmapMemory = allocator.alloc(u8, bitmapMemorySize) catch unreachable;
     if (bitmapMemorySize == 0) {
         // window is minimized
-        BitmapMemory = null;
+        bitmapMemory = null;
         return;
     }
-    BitmapMemory = windows.VirtualAlloc(null, bitmapMemorySize, windows.MEM_COMMIT | windows.MEM_RESERVE, windows.PAGE_READWRITE) catch unreachable;
+
+    bitmapMemory = windows.VirtualAlloc(null, bitmapMemorySize, windows.MEM_COMMIT | windows.MEM_RESERVE, windows.PAGE_READWRITE) catch unreachable;
 
     // TODO: clear to black?
 }
 
 fn Win32UpdateWindow(hdc: user32.HDC, windowRect: *user32.RECT, x: i32, y: i32, width: i32, height: i32) void {
-    //_ = w.stretchDIBits(hdc, x, y, width, height, x, y, width, height, &bitmapMemory, &bitmapInfo, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
-    const windowindowsidth = windowRect.right - windowRect.left;
+    const windowWidth = windowRect.right - windowRect.left;
     const windowHeight = windowRect.bottom - windowRect.top;
-    _ = w.stretchDIBits(hdc, 0, 0, bitmapWidth, bitmapHeight, 0, 0, windowindowsidth, windowHeight, BitmapMemory, &bitmapInfo, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
+    _ = w.stretchDIBits(hdc, 0, 0, bitmapWidth, bitmapHeight, 0, 0, windowWidth, windowHeight, bitmapMemory, &bitmapInfo, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
 }
 
 // Responds to Windows' calls into this app
 // https://docs.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ms633573(v=vs.85)
-fn Win32MainWindowCallback(window_handle: user32.HWND, message: c_uint, wparam: usize, lparam: isize) callconv(.C) user32.LRESULT {
+fn Win32MainWindowCallback(window: user32.HWND, message: c_uint, wparam: usize, lparam: isize) callconv(.C) user32.LRESULT {
     const result: user32.LRESULT = 0;
     switch (message) {
         user32.WM_SIZE => {
             var clientRect: user32.RECT = undefined;
-            _ = w.getClientRect(window_handle, &clientRect) catch unreachable;
+            _ = w.getClientRect(window, &clientRect) catch unreachable;
             const width = clientRect.right - clientRect.left;
             const height = clientRect.bottom - clientRect.top;
             Win32ResizeDIBSection(width, height);
@@ -113,8 +99,8 @@ fn Win32MainWindowCallback(window_handle: user32.HWND, message: c_uint, wparam: 
         },
         user32.WM_PAINT => {
             var paint: w.PAINTSTRUCT = undefined;
-            var context = w.beginPaint(window_handle, &paint).?;
-            defer _ = w.endPaint(window_handle, &paint);
+            var context = w.beginPaint(window, &paint).?;
+            defer _ = w.endPaint(window, &paint);
 
             const x = paint.rcPaint.left;
             const y = paint.rcPaint.top;
@@ -123,7 +109,7 @@ fn Win32MainWindowCallback(window_handle: user32.HWND, message: c_uint, wparam: 
             Win32UpdateWindow(context, &paint.rcPaint, x, y, width, height);
         },
         else => {
-            return user32.defWindowProcW(window_handle, message, wparam, lparam);
+            return user32.defWindowProcW(window, message, wparam, lparam);
         },
     }
     return result;
@@ -140,13 +126,12 @@ pub fn main() !void {
 }
 
 pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: user32.PWSTR, cmdShow: c_int) c_int {
-    const window_classname = L("HandmadeWindowClass");
     const window_title = L("Handmade Zero");
 
-    var window_class: user32.WNDCLASSEXW = .{
+    var windowClass: user32.WNDCLASSEXW = .{
         .lpfnWndProc = Win32MainWindowCallback,
         .hInstance = instance,
-        .lpszClassName = window_classname,
+        .lpszClassName = L("HandmadeWindowClass"),
         .style = 0,
         .lpszMenuName = null,
         .hIcon = null,
@@ -154,23 +139,23 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         .hbrBackground = null,
         .hIconSm = null,
     };
-    const registered_class = user32.registerClassExW(&window_class) catch |err| {
+    const registeredClass = user32.registerClassExW(&windowClass) catch |err| {
         std.debug.print("error registerClassExW: {}", .{err});
         return 1;
     };
 
-    var handle = user32.createWindowExW(user32.CS_OWNDC | user32.CS_HREDRAW | user32.CS_VREDRAW, window_class.lpszClassName, window_title, user32.WS_OVERLAPPEDWINDOW | user32.WS_VISIBLE, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, null, null, instance, null) catch |err| {
+    var window = user32.createWindowExW(user32.CS_OWNDC | user32.CS_HREDRAW | user32.CS_VREDRAW, windowClass.lpszClassName, window_title, user32.WS_OVERLAPPEDWINDOW | user32.WS_VISIBLE, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, null, null, instance, null) catch |err| {
         std.debug.print("error createWindowExW: {}", .{err});
         return 1;
     };
 
     running = true;
-    var xOffset:i8 = 0;
-    var yOffset:i8 = 0;
+    var xOffset: i8 = 0;
+    var yOffset: i8 = 0;
     while (running) {
         var message: user32.MSG = undefined;
-        while (user32.peekMessageW(&message, handle, 0, 0, user32.PM_REMOVE)) |more_messages| {
-            if (!more_messages)  break;
+        while (user32.peekMessageW(&message, window, 0, 0, user32.PM_REMOVE)) |moreMessages| {
+            if (!moreMessages) break;
             if (message.message == user32.WM_QUIT) {
                 running = false;
             }
@@ -182,15 +167,15 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         }
         RenderWeirdGradient(xOffset, yOffset);
 
-        const device_context = user32.getDC(handle) catch unreachable;
-        defer _ = user32.ReleaseDC(handle, device_context);
+        const deviceContext = user32.getDC(window) catch unreachable;
+        defer _ = user32.ReleaseDC(window, deviceContext);
 
         var clientRect: user32.RECT = undefined;
-        _ = w.getClientRect(handle, &clientRect) catch unreachable;
+        _ = w.getClientRect(window, &clientRect) catch unreachable;
         const windowWidth = clientRect.right - clientRect.left;
         const windowHeight = clientRect.bottom - clientRect.top;
 
-        Win32UpdateWindow(device_context, &clientRect, 0, 0, windowWidth, windowHeight);
+        Win32UpdateWindow(deviceContext, &clientRect, 0, 0, windowWidth, windowHeight);
         xOffset +%= 1;
         yOffset +%= 1;
     }
