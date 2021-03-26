@@ -11,7 +11,7 @@ const allocator = std.heap.page_allocator;
 
 const OffscreenBuffer = struct {
     info: w.BITMAPINFO = std.mem.zeroes(w.BITMAPINFO),
-    memory: ?*c_void = null,
+    memory: ?[:0]c_uint = null,
     width: i32 = undefined,
     height: i32 = undefined,
     bytesPerPixel: usize = undefined,
@@ -25,16 +25,15 @@ var backBuffer: OffscreenBuffer = .{
 };
 
 fn RenderWeirdGradient(buffer: *OffscreenBuffer, xOffset: i32, yOffset: i32) void {
-    // TODO: This is directly translated from C, how to do it in Zig?
-    var row: [*c]u8 = @ptrCast([*c]u8, @alignCast(@alignOf(u8), buffer.memory));
+    var row: usize = 0;
     var y: i32 = 0;
     while (y < buffer.height) : (y += 1) {
-        var pixel: [*c]u32 = @ptrCast([*c]u32, @alignCast(@alignOf(u32), row));
+        var pixel: usize = row;
         var x: i32 = 0;
         while (x < buffer.width) : (x += 1) {
             var blue: u8 = @bitCast(u8, @truncate(i8, x + xOffset));
             var green: u8 = @bitCast(u8, @truncate(i8, y + xOffset));
-            pixel.?.* = (@intCast(u32, green) << 8) | blue;
+            buffer.memory.?[pixel] = (@intCast(c_uint, green) << 8) | blue;
             pixel += 1;
         }
         row += buffer.pitch;
@@ -56,13 +55,13 @@ fn Win32GetWindowSize(window: user32.HWND) WindowSize {
 
 fn Win32ResizeDIBSection(buffer: *OffscreenBuffer, width: i32, height: i32) void {
     if (buffer.memory != null) {
-        _ = windows.VirtualFree(buffer.memory.?, 0, windows.MEM_RELEASE);
+        allocator.free(buffer.memory.?);
         buffer.memory = null;
     }
     buffer.width = width;
     buffer.height = height;
     buffer.bytesPerPixel = 4;
-    buffer.pitch = @as(usize, @bitCast(u32, width)) * buffer.bytesPerPixel;
+    buffer.pitch = @intCast(usize, width);
 
     buffer.info.bmiHeader.biSize = @sizeOf(w.BITMAPINFOHEADER);
     buffer.info.bmiHeader.biWidth = width;
@@ -71,17 +70,17 @@ fn Win32ResizeDIBSection(buffer: *OffscreenBuffer, width: i32, height: i32) void
     buffer.info.bmiHeader.biBitCount = 32;
     buffer.info.bmiHeader.biCompression = w.BI_RGB;
 
-    const bitmapMemorySize: usize = @intCast(usize, width * height) * buffer.bytesPerPixel;
-    if (bitmapMemorySize != 0) {
-        // bitmapMemorySize is 0 when the window is minimized
-        buffer.memory = windows.VirtualAlloc(null, bitmapMemorySize, windows.MEM_COMMIT | windows.MEM_RESERVE, windows.PAGE_READWRITE) catch unreachable;
+    const bitmapSize: usize = @intCast(usize, width * height);
+    if (bitmapSize != 0) {
+        // bitmapSize is 0 when the window is minimized
+        buffer.memory = allocator.allocWithOptions(c_uint, bitmapSize, null, 0) catch unreachable;
     }
     // TODO: clear to black?
 }
 
 fn Win32UpdateWindow(hdc: user32.HDC, windowWidth: i32, windowHeight: i32, buffer: *OffscreenBuffer, x: i32, y: i32, width: i32, height: i32) void {
     // TODO: Aspect ratio correction
-    _ = w.stretchDIBits(hdc, 0, 0, windowWidth, windowHeight, 0, 0, buffer.width, buffer.height, buffer.memory, &buffer.info, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
+    _ = w.stretchDIBits(hdc, 0, 0, windowWidth, windowHeight, 0, 0, buffer.width, buffer.height, buffer.memory.?.ptr, &buffer.info, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
 }
 
 // Responds to Windows' calls into this app
