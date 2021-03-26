@@ -41,6 +41,19 @@ fn RenderWeirdGradient(buffer: *OffscreenBuffer, xOffset: i32, yOffset: i32) voi
     }
 }
 
+const WindowSize = struct {
+    width: i32,
+    height: i32,
+};
+
+fn Win32GetWindowSize(window: user32.HWND) WindowSize {
+    var clientRect: user32.RECT = undefined;
+    _ = w.getClientRect(window, &clientRect) catch unreachable;
+    const width = clientRect.right - clientRect.left;
+    const height = clientRect.bottom - clientRect.top;
+    return .{ .width = width, .height = height };
+}
+
 fn Win32ResizeDIBSection(buffer: *OffscreenBuffer, width: i32, height: i32) void {
     if (buffer.memory != null) {
         _ = windows.VirtualFree(buffer.memory.?, 0, windows.MEM_RELEASE);
@@ -66,9 +79,7 @@ fn Win32ResizeDIBSection(buffer: *OffscreenBuffer, width: i32, height: i32) void
     // TODO: clear to black?
 }
 
-fn Win32UpdateWindow(hdc: user32.HDC, windowRect: *user32.RECT, buffer: *OffscreenBuffer, x: i32, y: i32, width: i32, height: i32) void {
-    const windowWidth = windowRect.right - windowRect.left;
-    const windowHeight = windowRect.bottom - windowRect.top;
+fn Win32UpdateWindow(hdc: user32.HDC, windowWidth: i32, windowHeight: i32, buffer: *OffscreenBuffer, x: i32, y: i32, width: i32, height: i32) void {
     _ = w.stretchDIBits(hdc, 0, 0, buffer.width, buffer.height, 0, 0, windowWidth, windowHeight, buffer.memory, &buffer.info, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
 }
 
@@ -78,11 +89,8 @@ fn Win32MainWindowCallback(window: user32.HWND, message: c_uint, wparam: usize, 
     const result: user32.LRESULT = 0;
     switch (message) {
         user32.WM_SIZE => {
-            var clientRect: user32.RECT = undefined;
-            _ = w.getClientRect(window, &clientRect) catch unreachable;
-            const width = clientRect.right - clientRect.left;
-            const height = clientRect.bottom - clientRect.top;
-            Win32ResizeDIBSection(&backBuffer, width, height);
+            const windowSize = Win32GetWindowSize(window);
+            Win32ResizeDIBSection(&backBuffer, windowSize.width, windowSize.height);
             // TODO: screen goes black while resizing.
             // calling RenderWeirdGradient fixes this but
             // we would have to make the offsets global
@@ -108,7 +116,9 @@ fn Win32MainWindowCallback(window: user32.HWND, message: c_uint, wparam: usize, 
             const y = paint.rcPaint.top;
             const width = paint.rcPaint.right - paint.rcPaint.left;
             const height = paint.rcPaint.bottom - paint.rcPaint.top;
-            Win32UpdateWindow(context, &paint.rcPaint, &backBuffer, x, y, width, height);
+
+            const windowSize = Win32GetWindowSize(window);
+            Win32UpdateWindow(context, windowSize.width, windowSize.height, &backBuffer, x, y, width, height);
         },
         else => {
             return user32.defWindowProcW(window, message, wparam, lparam);
@@ -172,12 +182,8 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         const deviceContext = user32.getDC(window) catch unreachable;
         defer _ = user32.ReleaseDC(window, deviceContext);
 
-        var clientRect: user32.RECT = undefined;
-        _ = w.getClientRect(window, &clientRect) catch unreachable;
-        const windowWidth = clientRect.right - clientRect.left;
-        const windowHeight = clientRect.bottom - clientRect.top;
-
-        Win32UpdateWindow(deviceContext, &clientRect, &backBuffer, 0, 0, windowWidth, windowHeight);
+        const windowSize = Win32GetWindowSize(window);
+        Win32UpdateWindow(deviceContext, windowSize.width, windowSize.height, &backBuffer, 0, 0, windowSize.width, windowSize.height);
         xOffset +%= 1;
         yOffset +%= 1;
     }
