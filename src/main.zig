@@ -66,7 +66,7 @@ fn Win32ResizeDIBSection(buffer: *OffscreenBuffer, width: i32, height: i32) void
 
     buffer.info.bmiHeader.biSize = @sizeOf(w.BITMAPINFOHEADER);
     buffer.info.bmiHeader.biWidth = width;
-    buffer.info.bmiHeader.biHeight = -height;
+    buffer.info.bmiHeader.biHeight = -height; // Negative for top-down drawing
     buffer.info.bmiHeader.biPlanes = 1;
     buffer.info.bmiHeader.biBitCount = 32;
     buffer.info.bmiHeader.biCompression = w.BI_RGB;
@@ -80,7 +80,8 @@ fn Win32ResizeDIBSection(buffer: *OffscreenBuffer, width: i32, height: i32) void
 }
 
 fn Win32UpdateWindow(hdc: user32.HDC, windowWidth: i32, windowHeight: i32, buffer: *OffscreenBuffer, x: i32, y: i32, width: i32, height: i32) void {
-    _ = w.stretchDIBits(hdc, 0, 0, buffer.width, buffer.height, 0, 0, windowWidth, windowHeight, buffer.memory, &buffer.info, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
+    // TODO: Aspect ratio correction
+    _ = w.stretchDIBits(hdc, 0, 0, windowWidth, windowHeight, 0, 0, buffer.width, buffer.height, buffer.memory, &buffer.info, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
 }
 
 // Responds to Windows' calls into this app
@@ -89,8 +90,8 @@ fn Win32MainWindowCallback(window: user32.HWND, message: c_uint, wparam: usize, 
     const result: user32.LRESULT = 0;
     switch (message) {
         user32.WM_SIZE => {
-            const windowSize = Win32GetWindowSize(window);
-            Win32ResizeDIBSection(&backBuffer, windowSize.width, windowSize.height);
+            // const windowSize = Win32GetWindowSize(window);
+            // Win32ResizeDIBSection(&backBuffer, windowSize.width, windowSize.height);
             // TODO: screen goes black while resizing.
             // calling RenderWeirdGradient fixes this but
             // we would have to make the offsets global
@@ -144,7 +145,7 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         .lpfnWndProc = Win32MainWindowCallback,
         .hInstance = instance,
         .lpszClassName = L("HandmadeWindowClass"),
-        .style = 0,
+        .style = user32.CS_HREDRAW | user32.CS_VREDRAW,
         .lpszMenuName = null,
         .hIcon = null,
         .hCursor = null,
@@ -156,10 +157,14 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         return 1;
     };
 
-    var window = user32.createWindowExW(user32.CS_OWNDC | user32.CS_HREDRAW | user32.CS_VREDRAW, windowClass.lpszClassName, window_title, user32.WS_OVERLAPPEDWINDOW | user32.WS_VISIBLE, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, null, null, instance, null) catch |err| {
+    var window = user32.createWindowExW(user32.CS_HREDRAW | user32.CS_VREDRAW, windowClass.lpszClassName, window_title, user32.WS_OVERLAPPEDWINDOW | user32.WS_VISIBLE, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, null, null, instance, null) catch |err| {
         std.debug.print("error createWindowExW: {}", .{err});
         return 1;
     };
+
+    //const windowSize = Win32GetWindowSize(window);
+    //Win32ResizeDIBSection(&backBuffer, windowSize.width, windowSize.height);
+    Win32ResizeDIBSection(&backBuffer, 1280, 720);
 
     running = true;
     var xOffset: i8 = 0;
