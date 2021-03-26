@@ -139,13 +139,14 @@ pub fn main() !void {
 }
 
 pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: user32.PWSTR, cmdShow: c_int) c_int {
+    Win32ResizeDIBSection(&backBuffer, 1280, 720);
     const window_title = L("Handmade Zero");
 
     var windowClass: user32.WNDCLASSEXW = .{
         .lpfnWndProc = Win32MainWindowCallback,
         .hInstance = instance,
         .lpszClassName = L("HandmadeWindowClass"),
-        .style = user32.CS_HREDRAW | user32.CS_VREDRAW,
+        .style = user32.CS_HREDRAW | user32.CS_VREDRAW | user32.CS_OWNDC,
         .lpszMenuName = null,
         .hIcon = null,
         .hCursor = null,
@@ -157,18 +158,18 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         return 1;
     };
 
-    var window = user32.createWindowExW(user32.CS_HREDRAW | user32.CS_VREDRAW, windowClass.lpszClassName, window_title, user32.WS_OVERLAPPEDWINDOW | user32.WS_VISIBLE, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, null, null, instance, null) catch |err| {
+    var window = user32.createWindowExW(0, windowClass.lpszClassName, window_title, user32.WS_OVERLAPPEDWINDOW | user32.WS_VISIBLE, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, null, null, instance, null) catch |err| {
         std.debug.print("error createWindowExW: {}", .{err});
         return 1;
     };
+    // CS_OWNDC lets us keep the deviceContext forever
+    const deviceContext = user32.getDC(window) catch unreachable;
+    //defer _ = user32.ReleaseDC(window, deviceContext);
 
-    //const windowSize = Win32GetWindowSize(window);
-    //Win32ResizeDIBSection(&backBuffer, windowSize.width, windowSize.height);
-    Win32ResizeDIBSection(&backBuffer, 1280, 720);
-
-    running = true;
     var xOffset: i8 = 0;
     var yOffset: i8 = 0;
+
+    running = true;
     while (running) {
         var message: user32.MSG = undefined;
         while (user32.peekMessageW(&message, window, 0, 0, user32.PM_REMOVE)) |moreMessages| {
@@ -183,9 +184,6 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
             return 1;
         }
         RenderWeirdGradient(&backBuffer, xOffset, yOffset);
-
-        const deviceContext = user32.getDC(window) catch unreachable;
-        defer _ = user32.ReleaseDC(window, deviceContext);
 
         const windowSize = Win32GetWindowSize(window);
         Win32UpdateWindow(deviceContext, windowSize.width, windowSize.height, &backBuffer, 0, 0, windowSize.width, windowSize.height);
