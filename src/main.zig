@@ -9,65 +9,67 @@ const L = std.unicode.utf8ToUtf16LeStringLiteral;
 // });
 const allocator = std.heap.page_allocator;
 
+const OffscreenBuffer = struct {
+    info: w.BITMAPINFO = std.mem.zeroes(w.BITMAPINFO),
+    memory: ?*c_void = null,
+    width: i32 = undefined,
+    height: i32 = undefined,
+    bytesPerPixel: usize = undefined,
+    pitch: usize = undefined,
+};
+
 //Globals
 var running = false;
-var bitmapInfo: w.BITMAPINFO = std.mem.zeroes(w.BITMAPINFO);
-var bitmapMemory: ?*c_void = @import("std").mem.zeroes(?*c_void);
-var bitmapWidth: i32 = undefined;
-var bitmapHeight: i32 = undefined;
-const bytesPerPixel = 4;
+var backBuffer: OffscreenBuffer = .{
+    .bytesPerPixel = 4,
+};
 
-var sent: i32 = 20;
-fn RenderWeirdGradient(xOffset: i32, yOffset: i32) void {
-    const width = bitmapWidth;
-    const pitch = @intCast(usize, width * bytesPerPixel);
-
+fn RenderWeirdGradient(buffer: *OffscreenBuffer, xOffset: i32, yOffset: i32) void {
     // TODO: This is directly translated from C, how to do it in Zig?
-    var row: [*c]u8 = @ptrCast([*c]u8, @alignCast(@alignOf(u8), bitmapMemory));
+    var row: [*c]u8 = @ptrCast([*c]u8, @alignCast(@alignOf(u8), buffer.memory));
     var y: i32 = 0;
-    while (y < bitmapHeight) : (y += 1) {
+    while (y < buffer.height) : (y += 1) {
         var pixel: [*c]u32 = @ptrCast([*c]u32, @alignCast(@alignOf(u32), row));
         var x: i32 = 0;
-        while (x < bitmapWidth) : (x += 1) {
+        while (x < buffer.width) : (x += 1) {
             var blue: u8 = @bitCast(u8, @truncate(i8, x + xOffset));
             var green: u8 = @bitCast(u8, @truncate(i8, y + xOffset));
             pixel.?.* = (@intCast(u32, green) << 8) | blue;
             pixel += 1;
         }
-        row += pitch;
+        row += buffer.pitch;
     }
 }
 
-fn Win32ResizeDIBSection(width: i32, height: i32) void {
-    if (bitmapMemory != null) {
-        _ = windows.VirtualFree(bitmapMemory.?, 0, windows.MEM_RELEASE);
+fn Win32ResizeDIBSection(buffer: *OffscreenBuffer, width: i32, height: i32) void {
+    if (buffer.memory != null) {
+        _ = windows.VirtualFree(buffer.memory.?, 0, windows.MEM_RELEASE);
+        buffer.memory = null;
     }
-    bitmapWidth = width;
-    bitmapHeight = height;
+    buffer.width = width;
+    buffer.height = height;
+    buffer.bytesPerPixel = 4;
+    buffer.pitch = @as(usize, @bitCast(u32, width)) * buffer.bytesPerPixel;
 
-    bitmapInfo.bmiHeader.biSize = @sizeOf(w.BITMAPINFOHEADER);
-    bitmapInfo.bmiHeader.biWidth = width;
-    bitmapInfo.bmiHeader.biHeight = -height;
-    bitmapInfo.bmiHeader.biPlanes = 1;
-    bitmapInfo.bmiHeader.biBitCount = 32;
-    bitmapInfo.bmiHeader.biCompression = w.BI_RGB;
+    buffer.info.bmiHeader.biSize = @sizeOf(w.BITMAPINFOHEADER);
+    buffer.info.bmiHeader.biWidth = width;
+    buffer.info.bmiHeader.biHeight = -height;
+    buffer.info.bmiHeader.biPlanes = 1;
+    buffer.info.bmiHeader.biBitCount = 32;
+    buffer.info.bmiHeader.biCompression = w.BI_RGB;
 
-    const bitmapMemorySize: usize = @intCast(usize, width * height * bytesPerPixel);
-    if (bitmapMemorySize == 0) {
-        // window is minimized
-        bitmapMemory = null;
-        return;
+    const bitmapMemorySize: usize = @intCast(usize, width * height) * buffer.bytesPerPixel;
+    if (bitmapMemorySize != 0) {
+        // bitmapMemorySize is 0 when the window is minimized
+        buffer.memory = windows.VirtualAlloc(null, bitmapMemorySize, windows.MEM_COMMIT | windows.MEM_RESERVE, windows.PAGE_READWRITE) catch unreachable;
     }
-
-    bitmapMemory = windows.VirtualAlloc(null, bitmapMemorySize, windows.MEM_COMMIT | windows.MEM_RESERVE, windows.PAGE_READWRITE) catch unreachable;
-
     // TODO: clear to black?
 }
 
-fn Win32UpdateWindow(hdc: user32.HDC, windowRect: *user32.RECT, x: i32, y: i32, width: i32, height: i32) void {
+fn Win32UpdateWindow(hdc: user32.HDC, windowRect: *user32.RECT, buffer: *OffscreenBuffer, x: i32, y: i32, width: i32, height: i32) void {
     const windowWidth = windowRect.right - windowRect.left;
     const windowHeight = windowRect.bottom - windowRect.top;
-    _ = w.stretchDIBits(hdc, 0, 0, bitmapWidth, bitmapHeight, 0, 0, windowWidth, windowHeight, bitmapMemory, &bitmapInfo, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
+    _ = w.stretchDIBits(hdc, 0, 0, buffer.width, buffer.height, 0, 0, windowWidth, windowHeight, buffer.memory, &buffer.info, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
 }
 
 // Responds to Windows' calls into this app
@@ -80,7 +82,7 @@ fn Win32MainWindowCallback(window: user32.HWND, message: c_uint, wparam: usize, 
             _ = w.getClientRect(window, &clientRect) catch unreachable;
             const width = clientRect.right - clientRect.left;
             const height = clientRect.bottom - clientRect.top;
-            Win32ResizeDIBSection(width, height);
+            Win32ResizeDIBSection(&backBuffer, width, height);
             // TODO: screen goes black while resizing.
             // calling RenderWeirdGradient fixes this but
             // we would have to make the offsets global
@@ -106,7 +108,7 @@ fn Win32MainWindowCallback(window: user32.HWND, message: c_uint, wparam: usize, 
             const y = paint.rcPaint.top;
             const width = paint.rcPaint.right - paint.rcPaint.left;
             const height = paint.rcPaint.bottom - paint.rcPaint.top;
-            Win32UpdateWindow(context, &paint.rcPaint, x, y, width, height);
+            Win32UpdateWindow(context, &paint.rcPaint, &backBuffer, x, y, width, height);
         },
         else => {
             return user32.defWindowProcW(window, message, wparam, lparam);
@@ -165,7 +167,7 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
             std.debug.print("error getMessageW: {}", .{err});
             return 1;
         }
-        RenderWeirdGradient(xOffset, yOffset);
+        RenderWeirdGradient(&backBuffer, xOffset, yOffset);
 
         const deviceContext = user32.getDC(window) catch unreachable;
         defer _ = user32.ReleaseDC(window, deviceContext);
@@ -175,7 +177,7 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         const windowWidth = clientRect.right - clientRect.left;
         const windowHeight = clientRect.bottom - clientRect.top;
 
-        Win32UpdateWindow(deviceContext, &clientRect, 0, 0, windowWidth, windowHeight);
+        Win32UpdateWindow(deviceContext, &clientRect, &backBuffer, 0, 0, windowWidth, windowHeight);
         xOffset +%= 1;
         yOffset +%= 1;
     }
