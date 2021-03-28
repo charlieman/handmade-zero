@@ -1,7 +1,6 @@
 const std = @import("std");
-const windows = std.os.windows;
-const GetLastError = windows.kernel32.GetLastError;
 usingnamespace std.os.windows;
+const GetLastError = kernel32.GetLastError;
 
 pub const GDI_ERROR = 0xFFFFFFFF;
 pub const DIB_RGB_COLORS = 0;
@@ -68,7 +67,7 @@ pub fn getClientRect(hWnd: HWND, lpRect: *RECT) !void {
     switch (GetLastError()) {
         .INVALID_WINDOW_HANDLE => unreachable,
         .INVALID_PARAMETER => unreachable,
-        else => |err| return windows.unexpectedError(err),
+        else => |err| return unexpectedError(err),
     }
 }
 

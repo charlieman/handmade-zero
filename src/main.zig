@@ -2,10 +2,12 @@ const std = @import("std");
 const user32 = std.os.windows.user32;
 const w = @import("windows.zig");
 const windows = std.os.windows;
+const xinput = @import("xinput.zig");
 const L = std.unicode.utf8ToUtf16LeStringLiteral;
 // const c = @cImport({
 //     @cInclude("windows.h");
 //     @cInclude("wingdi.h");
+//     @cInclude("xinput.h");
 // });
 const allocator = std.heap.page_allocator;
 
@@ -32,7 +34,7 @@ fn RenderWeirdGradient(buffer: *OffscreenBuffer, xOffset: i32, yOffset: i32) voi
         var x: i32 = 0;
         while (x < buffer.width) : (x += 1) {
             var blue: u8 = @bitCast(u8, @truncate(i8, x + xOffset));
-            var green: u8 = @bitCast(u8, @truncate(i8, y + xOffset));
+            var green: u8 = @bitCast(u8, @truncate(i8, y + yOffset));
             buffer.memory.?[pixel] = (@intCast(c_uint, green) << 8) | blue;
             pixel += 1;
         }
@@ -138,6 +140,8 @@ pub fn main() !void {
 }
 
 pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: user32.PWSTR, cmdShow: c_int) c_int {
+    xinput.win32LoadXinput();
+
     Win32ResizeDIBSection(&backBuffer, 1280, 720);
     const window_title = L("Handmade Zero");
 
@@ -167,6 +171,8 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
 
     var xOffset: i8 = 0;
     var yOffset: i8 = 0;
+    var xOffsetValue: i8 = 0;
+    var yOffsetValue: i8 = 0;
 
     running = true;
     while (running) {
@@ -182,12 +188,50 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
             std.debug.print("error getMessageW: {}", .{err});
             return 1;
         }
+        // Controller
+        var controllerIndex: u32 = 0;
+        while (controllerIndex < xinput.XUSER_MAX_COUNT) : (controllerIndex += 1) {
+            var controllerState: xinput.XINPUT_STATE = undefined;
+            if (xinput.getState(controllerIndex, &controllerState)) {
+                const Pad = controllerState.Gamepad;
+                const Up: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_UP != 0;
+                const Down: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_DOWN != 0;
+                const Left: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_LEFT != 0;
+                const Right: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_RIGHT != 0;
+                const Start: bool = Pad.wButtons & xinput.GAMEPAD_START != 0;
+                const Back: bool = Pad.wButtons & xinput.GAMEPAD_BACK != 0;
+                const LeftShoulder: bool = Pad.wButtons & xinput.GAMEPAD_LEFT_SHOULDER != 0;
+                const RightShoulder: bool = Pad.wButtons & xinput.GAMEPAD_RIGHT_SHOULDER != 0;
+                const AButton: bool = Pad.wButtons & xinput.GAMEPAD_A != 0;
+                const BButton: bool = Pad.wButtons & xinput.GAMEPAD_B != 0;
+                const XButton: bool = Pad.wButtons & xinput.GAMEPAD_X != 0;
+                const YButton: bool = Pad.wButtons & xinput.GAMEPAD_Y != 0;
+
+                const LeftStickX: i16 = Pad.sThumbLX;
+                const LeftStickY: i16 = Pad.sThumbLY;
+
+                xOffsetValue = @truncate(i8, @divTrunc(LeftStickX, 32512 / 5));
+                yOffsetValue = @truncate(i8, @divTrunc(LeftStickY, 32512 / 5));
+
+                // Vibrate if we are pressing the A button
+                if (AButton) {
+                    const Vibration = xinput.XINPUT_VIBRATION{
+                        .wLeftMotorSpeed = 65535,
+                        .wRightMotorSpeed = 65535,
+                    };
+                    xinput.setState(controllerIndex, &Vibration) catch {};
+                }
+            } else |err| {
+                // Controller not available
+            }
+        }
+        //
         RenderWeirdGradient(&backBuffer, xOffset, yOffset);
 
         const windowSize = Win32GetWindowSize(window);
         Win32UpdateWindow(deviceContext, windowSize.width, windowSize.height, &backBuffer, 0, 0, windowSize.width, windowSize.height);
-        xOffset +%= 1;
-        yOffset +%= 1;
+        xOffset +%= xOffsetValue;
+        yOffset +%= yOffsetValue;
     }
     return 0;
 }
