@@ -109,6 +109,49 @@ fn Win32MainWindowCallback(window: user32.HWND, message: c_uint, wparam: usize, 
             std.debug.print("WM_DESTROY\n", .{});
             running = false;
         },
+        user32.WM_SYSKEYDOWN, user32.WM_SYSKEYUP, user32.WM_KEYDOWN, user32.WM_KEYUP => {
+            const vKCode = @truncate(u8, wparam);
+            const altDown = (lparam & (1 << 29)) != 0;
+            const wasDown = (lparam & (1 << 30)) != 0;
+            const isDown = (lparam & (1 << 31)) == 0;
+            const justPressed = isDown and !wasDown;
+            const justReleased = !isDown and wasDown;
+            switch (vKCode) {
+                'W' => std.debug.print("W\n", .{}),
+                'A' => std.debug.print("A\n", .{}),
+                'S' => std.debug.print("S\n", .{}),
+                'D' => std.debug.print("D\n", .{}),
+                'Q' => std.debug.print("Q\n", .{}),
+                'E' => std.debug.print("E\n", .{}),
+                '1' => std.debug.print("1\n", .{}),
+                '2' => std.debug.print("2\n", .{}),
+                '3' => std.debug.print("3\n", .{}),
+                '4' => std.debug.print("4\n", .{}),
+                '5' => std.debug.print("5\n", .{}),
+                w.VK_ESCAPE => {
+                    std.debug.print("Esc ", .{});
+                    if (isDown) {
+                        std.debug.print("IsDown ", .{});
+                    }
+                    if (wasDown) {
+                        std.debug.print("Was Down", .{});
+                    }
+                    std.debug.print("\n", .{});
+                },
+                w.VK_SPACE => std.debug.print("Spacebar\n", .{}),
+                w.VK_LEFT => std.debug.print("LEFT\n", .{}),
+                w.VK_UP => std.debug.print("UP\n", .{}),
+                w.VK_RIGHT => std.debug.print("RIGHT\n", .{}),
+                w.VK_DOWN => std.debug.print("DOWN\n", .{}),
+                w.VK_PRINT => std.debug.print("PRINT\n", .{}),
+                w.VK_F4 => {
+                    if (altDown and justPressed) {
+                        running = false;
+                    }
+                },
+                else => {},
+            }
+        },
         user32.WM_PAINT => {
             var paint: w.PAINTSTRUCT = undefined;
             var context = w.beginPaint(window, &paint).?;
@@ -143,6 +186,7 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
     xinput.win32LoadXinput();
 
     Win32ResizeDIBSection(&backBuffer, 1280, 720);
+    //defer Win32ResizeDIBSection(&backBuffer, 0, 0); // Frees the backBuffer.memory at the end
     const window_title = L("Handmade Zero");
 
     var windowClass: user32.WNDCLASSEXW = .{

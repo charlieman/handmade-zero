@@ -44,6 +44,15 @@ pub const BITMAPINFO = extern struct {
     bmiColors: [1]RGBQUAD,
 };
 
+pub const VK_ESCAPE = 0x1B;
+pub const VK_SPACE = 0x20;
+pub const VK_LEFT = 0x25;
+pub const VK_UP = 0x26;
+pub const VK_RIGHT = 0x27;
+pub const VK_DOWN = 0x28;
+pub const VK_PRINT = 0x2A;
+pub const VK_F4 = 0x73;
+
 // TODO is simply changing HDC to HWND correct?
 pub extern "user32" fn PatBlt(hdc: HWND, x: c_int, y: c_int, w: c_int, h: c_int, rop: DWORD) callconv(WINAPI) BOOL;
 pub fn patBlt(hWnd: HWND, x: i32, y: i32, w: i32, h: i32, rop: u32) bool {

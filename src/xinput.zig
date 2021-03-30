@@ -64,7 +64,7 @@ pub var xInputGetState = dummy_x_input_get_state;
 pub var xInputSetState = dummy_x_input_set_state;
 
 pub fn win32LoadXinput() void {
-    var xinput_lib = DynLib.open("xinput1_3.dll") catch return;
+    var xinput_lib = DynLib.open("xinput1_4.dll") catch DynLib.open("xinput1_3.dll") catch return;
 
     if (xinput_lib.lookup(x_input_get_state, "XInputGetState")) |func| {
         xInputGetState = func;
