@@ -3,6 +3,7 @@ const user32 = std.os.windows.user32;
 const w = @import("windows.zig");
 const windows = std.os.windows;
 const xinput = @import("xinput.zig");
+const dsound = @import("dsound.zig");
 const L = std.unicode.utf8ToUtf16LeStringLiteral;
 // const c = @cImport({
 //     @cInclude("windows.h");
@@ -217,6 +218,8 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
     var yOffset: i8 = 0;
     var xOffsetValue: i8 = 0;
     var yOffsetValue: i8 = 0;
+
+    dsound.win32InitDSound(window, 48000, 48000 * 2);
 
     running = true;
     while (running) {
