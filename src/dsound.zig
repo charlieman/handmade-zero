@@ -13,7 +13,7 @@ pub const IDirectSoundVtbl = extern struct {
     QueryInterface: ?fn (*IDirectSound, *const IID, *LPVOID) callconv(.C) HRESULT,
     AddRef: ?fn (*IDirectSound) callconv(.C) ULONG,
     Release: ?fn (*IDirectSound) callconv(.C) ULONG,
-    CreateSoundBuffer: ?fn (*IDirectSound, *c.DSBUFFERDESC, **c.IDirectSoundBuffer, ?*c.IUnknown) callconv(.C) HRESULT,
+    CreateSoundBuffer: ?fn (*IDirectSound, *const c.DSBUFFERDESC, **c.IDirectSoundBuffer, ?*c.IUnknown) callconv(.C) HRESULT,
     GetCaps: ?fn (*IDirectSound, *c.DSCAPS) callconv(.C) HRESULT,
     DuplicateSoundBuffer: ?fn (*IDirectSound, *c.IDirectSoundBuffer, **c.IDirectSoundBuffer) callconv(.C) HRESULT,
     SetCooperativeLevel: ?fn (*IDirectSound, HWND, DWORD) callconv(.C) HRESULT,
@@ -38,19 +38,20 @@ pub fn win32InitDSound(window: HWND, samplesPerSecond: u32, bufferSize: i32) voi
         var res = directSoundCreate(null, &directSound, null);
         if (succeeded(res)) {
             const nChannels = 2;
-            const nBlockAlign = @truncate(c_ushort, @divTrunc(nChannels * samplesPerSecond, 8));
+            const wBitsPerSample = 16;
+            const nBlockAlign = @truncate(c_ushort, @divTrunc(nChannels * wBitsPerSample, 8));
             var waveFormat: c.WAVEFORMATEX = .{
                 .wFormatTag = c.WAVE_FORMAT_PCM,
                 .nChannels = nChannels,
                 .nSamplesPerSec = samplesPerSecond,
                 .nAvgBytesPerSec = nBlockAlign * samplesPerSecond,
                 .nBlockAlign = nBlockAlign,
-                .wBitsPerSample = 16,
+                .wBitsPerSample = wBitsPerSample,
                 .cbSize = 0,
             };
 
             if (succeeded(directSound.*.lpVtbl.*.SetCooperativeLevel.?(directSound, window, c.DSSCL_PRIORITY))) {
-                var bufferDescription: c.DSBUFFERDESC = .{
+                const bufferDescription: c.DSBUFFERDESC = .{
                     .dwSize = @sizeOf(c.DSBUFFERDESC),
                     .dwFlags = c.DSBCAPS_PRIMARYBUFFER,
                     .dwBufferBytes = 0,
@@ -60,13 +61,16 @@ pub fn win32InitDSound(window: HWND, samplesPerSecond: u32, bufferSize: i32) voi
                 };
                 var primaryBuffer: *c.IDirectSoundBuffer = undefined;
                 if (succeeded(directSound.*.lpVtbl.*.CreateSoundBuffer.?(directSound, &bufferDescription, &primaryBuffer, null))) {
-                    if (succeeded(primaryBuffer.*.lpVtbl.*.SetFormat.?(primaryBuffer, &waveFormat))) {
-                        std.debug.print("setFormat success\n", .{});
+                    const result = primaryBuffer.*.lpVtbl.*.SetFormat.?(primaryBuffer, &waveFormat);
+                    if (succeeded(result)) {
+                        std.debug.print("Primary  buffer format was set\n", .{});
+                    } else {
+                        std.debug.print("Primary  buffer format error {}\n", .{result});
                     }
                 }
             }
 
-            var secondaryBufferDesc: c.DSBUFFERDESC = .{
+            const secondBufferDesc: c.DSBUFFERDESC = .{
                 .dwSize = @sizeOf(c.DSBUFFERDESC),
                 .dwFlags = 0,
                 .dwBufferBytes = @intCast(c_ulong, bufferSize),
@@ -75,7 +79,7 @@ pub fn win32InitDSound(window: HWND, samplesPerSecond: u32, bufferSize: i32) voi
                 .guid3DAlgorithm = zeroes(c.GUID),
             };
             var secondaryBuffer: *c.IDirectSoundBuffer = undefined;
-            var resSec = directSound.*.lpVtbl.*.CreateSoundBuffer.?(directSound, &secondaryBufferDesc, &secondaryBuffer, null);
+            var resSec = directSound.*.lpVtbl.*.CreateSoundBuffer.?(directSound, &secondBufferDesc, &secondaryBuffer, null);
             if (succeeded(resSec)) {
                 std.debug.print("CreateSoundBuffer SecondaryBuffer success\n", .{});
             } else {

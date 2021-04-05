@@ -3,3 +3,9 @@ zig-cache/
 *.swp
 src/translated.zig
 /tags
+
+# Visual Studio stuff for debugging
+.vs
+*.suo
+*.sln
+
