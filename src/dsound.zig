@@ -6,6 +6,7 @@ const c = @cImport({
     @cInclude("dsound.h");
 });
 
+pub const DSBPLAY_LOOPING = 0x00000001;
 pub const DirectSoundCreate = fn (pcGuidDevice: ?*c.GUID, ppDS: **IDirectSound, pUnkOuter: ?*c.IUnknown) HRESULT;
 
 pub const IID = GUID;
@@ -26,8 +27,45 @@ pub const IDirectSound = extern struct {
     lpVtbl: *IDirectSoundVtbl,
 };
 
-fn succeeded(result: HRESULT) callconv(.Inline) bool {
+pub fn succeeded(result: HRESULT) callconv(.Inline) bool {
     return result >= 0;
+}
+
+pub var GlobalSoundBuffer: *c.IDirectSoundBuffer = undefined;
+
+pub fn IDirectSoundBuffer_Play(p: *c.IDirectSoundBuffer, dwReserved1: c_ulong, dwReserved2: c_ulong, dwFlags: c_ulong) !void {
+    const r = p.*.lpVtbl.*.Play.?(p, dwReserved1, dwReserved2, dwFlags);
+    if (succeeded(r)) {
+        return;
+    }
+    std.debug.print("IDirectSoundBuffer_Play Error: {}\n", .{r});
+    return error.DirectSoundError;
+}
+
+pub fn IDirectSoundBuffer_Lock(p: anytype, a: anytype, b: anytype, c_: anytype, d: anytype, e: anytype, f: anytype, g: anytype) callconv(.Inline) !void {
+    const r = p.*.lpVtbl.*.Lock.?(p, a, b, c_, d, e, f, g);
+    if (succeeded(r)) {
+        return;
+    }
+    std.debug.print("IDirectSoundBuffer_Lock Error: {}\n", .{r});
+    return error.DirectSoundError;
+}
+pub fn IDirectSoundBuffer_Unlock(a: anytype, b: anytype, c_: anytype, d: anytype) callconv(.Inline) !void {
+    const r = GlobalSoundBuffer.*.lpVtbl.*.Unlock.?(GlobalSoundBuffer, a, b, c_, d);
+    if (succeeded(r)) {
+        return;
+    }
+    std.debug.print("IDirectSoundBuffer_Unock Error: {}\n", .{r});
+    return error.DirectSoundError;
+}
+
+pub fn IDirectSoundBuffer_GetCurrentPosition(a: anytype, b: anytype) callconv(.Inline) !void {
+    const r = GlobalSoundBuffer.*.lpVtbl.*.GetCurrentPosition.?(GlobalSoundBuffer, a, b);
+    if (succeeded(r)) {
+        return;
+    }
+    std.debug.print("IDirectSoundBuffer_GetCurrentPosition Error: {}\n", .{r});
+    return error.DirectSoundError;
 }
 
 pub fn win32InitDSound(window: HWND, samplesPerSecond: u32, bufferSize: i32) void {
@@ -78,12 +116,11 @@ pub fn win32InitDSound(window: HWND, samplesPerSecond: u32, bufferSize: i32) voi
                 .lpwfxFormat = &waveFormat,
                 .guid3DAlgorithm = zeroes(c.GUID),
             };
-            var secondaryBuffer: *c.IDirectSoundBuffer = undefined;
-            var resSec = directSound.*.lpVtbl.*.CreateSoundBuffer.?(directSound, &secondBufferDesc, &secondaryBuffer, null);
+            var resSec = directSound.*.lpVtbl.*.CreateSoundBuffer.?(directSound, &secondBufferDesc, &GlobalSoundBuffer, null);
             if (succeeded(resSec)) {
-                std.debug.print("CreateSoundBuffer SecondaryBuffer success\n", .{});
+                std.debug.print("CreateSoundBuffer GlobalSoundBuffer success\n", .{});
             } else {
-                std.debug.print("Error CreateSoundBuffer SecondaryBuffer: {}\n", .{resSec});
+                std.debug.print("Error CreateSoundBuffer GlobalSoundBuffer: {}\n", .{resSec});
             }
         } else {
             std.debug.print("Error DirectSoundCreate: {}\n", .{res});

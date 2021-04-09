@@ -210,16 +210,32 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         std.debug.print("error createWindowExW: {}", .{err});
         return 1;
     };
-    // CS_OWNDC lets us keep the deviceContext forever
+    // CS_OWNDC in windowClass.style lets us keep the deviceContext forever
     const deviceContext = user32.getDC(window) catch unreachable;
     //defer _ = user32.ReleaseDC(window, deviceContext);
+
+    // Sound Stuff
+    const samplesPerSecond = 48000;
+    const bytesPerSample = @sizeOf(u16) * 2;
+    const soundBufferSize = samplesPerSecond * bytesPerSample;
+    const toneHz = 256; // Approximation to 261.62 Hz which is middle C
+    const toneVolume = 300;
+    const wavePeriod = samplesPerSecond / toneHz;
+    const halfWavePeriod = wavePeriod / 2;
+    var runningSampleIndex: u32 = 0;
+
+    std.debug.print("hwp: {}\n", .{halfWavePeriod});
+
+    dsound.win32InitDSound(window, samplesPerSecond, soundBufferSize);
+    //GlobalSoundBuffer
+    var soundIsPlaying = false;
+
+    // Render stuff
 
     var xOffset: i8 = 0;
     var yOffset: i8 = 0;
     var xOffsetValue: i8 = 0;
     var yOffsetValue: i8 = 0;
-
-    dsound.win32InitDSound(window, 48000, 48000 * 2);
 
     running = true;
     while (running) {
@@ -274,6 +290,51 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         }
         //
         RenderWeirdGradient(&backBuffer, xOffset, yOffset);
+
+        // Sound test stuff
+        var PlayCursor: dsound.DWORD = undefined;
+        var WriteCursor: dsound.DWORD = undefined;
+        if (dsound.IDirectSoundBuffer_GetCurrentPosition(&PlayCursor, &WriteCursor)) {
+            const LockOffset: c_ulong = runningSampleIndex * bytesPerSample % soundBufferSize;
+            const BytesToWrite: c_ulong = if (LockOffset >= PlayCursor) (soundBufferSize - LockOffset + PlayCursor) else (PlayCursor - LockOffset);
+
+            var Region1: ?*c_void = undefined;
+            var Region1Size: u32 = undefined;
+            var Region2: ?*c_void = undefined;
+            var Region2Size: u32 = undefined;
+
+            if (dsound.IDirectSoundBuffer_Lock(dsound.GlobalSoundBuffer, LockOffset, BytesToWrite, &Region1, &Region1Size, &Region2, &Region2Size, 0)) {
+                const Region1SampleCount = Region1Size / bytesPerSample;
+                var sampleOut = @ptrCast([*c]c_short, @alignCast(@alignOf(c_short), Region1));
+                var sampleIndex: c_ulong = 0;
+                while (sampleIndex < Region1SampleCount) : (sampleIndex += 1) {
+                    var sampleValue: c_short = if (@mod(runningSampleIndex / halfWavePeriod, 2) != 0) toneVolume else -toneVolume;
+                    sampleOut.* = sampleValue;
+                    sampleOut += 1;
+                    sampleOut.* = sampleValue;
+                    runningSampleIndex += 1;
+                }
+
+                const Region2SampleCount = Region2Size / bytesPerSample;
+                sampleOut = @ptrCast([*c]c_short, @alignCast(@alignOf(c_short), Region2));
+                sampleIndex = 0;
+                while (sampleIndex < Region2SampleCount) : (sampleIndex += 1) {
+                    var sampleValue: c_short = if (@mod(runningSampleIndex / halfWavePeriod, 2) != 0) toneVolume else -toneVolume;
+                    sampleOut.* = sampleValue;
+                    sampleOut += 1;
+                    sampleOut.* = sampleValue;
+                    runningSampleIndex += 1;
+                }
+
+                dsound.IDirectSoundBuffer_Unlock(Region1, Region1Size, Region2, Region2Size) catch {};
+            } else |err| {}
+
+            // /Sound stuff
+        } else |err| {}
+        if (!soundIsPlaying) {
+            dsound.IDirectSoundBuffer_Play(dsound.GlobalSoundBuffer, 0, 0, dsound.DSBPLAY_LOOPING) catch {};
+            soundIsPlaying = true;
+        }
 
         const windowSize = Win32GetWindowSize(window);
         Win32UpdateWindow(deviceContext, windowSize.width, windowSize.height, &backBuffer, 0, 0, windowSize.width, windowSize.height);
