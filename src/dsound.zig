@@ -68,7 +68,17 @@ pub fn IDirectSoundBuffer_GetCurrentPosition(a: anytype, b: anytype) callconv(.I
     return error.DirectSoundError;
 }
 
-pub fn win32InitDSound(window: HWND, samplesPerSecond: u32, bufferSize: i32) void {
+pub const win32_sound_output = struct {
+    samplesPerSecond: u32,
+    bytesPerSample: u32,
+    soundBufferSize: DWORD,
+    toneHz: u32,
+    toneVolume: i32,
+    wavePeriod: u32,
+    runningSampleIndex: u32,
+};
+
+pub fn win32InitDSound(window: HWND, samplesPerSecond: u32, bufferSize: DWORD) void {
     var dsound_lib = DynLib.open("dsound.dll") catch return;
 
     if (dsound_lib.lookup(DirectSoundCreate, "DirectSoundCreate")) |directSoundCreate| {
@@ -111,7 +121,7 @@ pub fn win32InitDSound(window: HWND, samplesPerSecond: u32, bufferSize: i32) voi
             const secondBufferDesc: c.DSBUFFERDESC = .{
                 .dwSize = @sizeOf(c.DSBUFFERDESC),
                 .dwFlags = 0,
-                .dwBufferBytes = @intCast(c_ulong, bufferSize),
+                .dwBufferBytes = bufferSize,
                 .dwReserved = 0,
                 .lpwfxFormat = &waveFormat,
                 .guid3DAlgorithm = zeroes(c.GUID),
@@ -126,4 +136,48 @@ pub fn win32InitDSound(window: HWND, samplesPerSecond: u32, bufferSize: i32) voi
             std.debug.print("Error DirectSoundCreate: {}\n", .{res});
         }
     }
+}
+var first = true;
+pub fn win32FillSoundBuffer(soundOutput: *win32_sound_output, lockOffset: DWORD, bytesToWrite: DWORD) !void {
+    var Region1: ?*c_void = undefined;
+    var Region1Size: u32 = undefined;
+    var Region2: ?*c_void = undefined;
+    var Region2Size: u32 = undefined;
+
+    if (bytesToWrite == 0) return;
+
+    if (IDirectSoundBuffer_Lock(GlobalSoundBuffer, lockOffset, bytesToWrite, &Region1, &Region1Size, &Region2, &Region2Size, 0)) {
+        const Region1SampleCount = Region1Size / soundOutput.bytesPerSample;
+        var sampleOut = @ptrCast([*c]i16, @alignCast(@alignOf(i16), Region1));
+        var sampleIndex: u32 = 0;
+        while (sampleIndex < Region1SampleCount) : (sampleIndex +%= 1) {
+            var t: f32 = 2 * std.math.pi * @intToFloat(f32, soundOutput.runningSampleIndex) / @intToFloat(f32, soundOutput.wavePeriod); // time
+            var sineValue: f32 = @sin(t);
+            var sampleValue: i16 = @floatToInt(i16, sineValue * @intToFloat(f32, soundOutput.toneVolume));
+            sampleOut.* = sampleValue;
+            sampleOut += 1;
+            sampleOut.* = sampleValue;
+            sampleOut += 1;
+
+            soundOutput.runningSampleIndex +%= 1;
+        }
+        first = false;
+
+        const Region2SampleCount = Region2Size / soundOutput.bytesPerSample;
+        sampleOut = @ptrCast([*c]i16, @alignCast(@alignOf(i16), Region2));
+        sampleIndex = 0;
+        while (sampleIndex < Region2SampleCount) : (sampleIndex +%= 1) {
+            var t: f32 = 2 * std.math.pi * @intToFloat(f32, soundOutput.runningSampleIndex) / @intToFloat(f32, soundOutput.wavePeriod); // time
+            var sineValue: f32 = @sin(t);
+            var sampleValue: i16 = @floatToInt(i16, sineValue * @intToFloat(f32, soundOutput.toneVolume));
+            sampleOut.* = sampleValue;
+            sampleOut += 1;
+            sampleOut.* = sampleValue;
+            sampleOut += 1;
+
+            soundOutput.runningSampleIndex +%= 1;
+        }
+
+        IDirectSoundBuffer_Unlock(Region1, Region1Size, Region2, Region2Size) catch {};
+    } else |err| {}
 }

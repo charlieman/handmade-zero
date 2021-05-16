@@ -217,18 +217,20 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
     // Sound Stuff
     const samplesPerSecond = 48000;
     const bytesPerSample = @sizeOf(u16) * 2;
-    const soundBufferSize = samplesPerSecond * bytesPerSample;
     const toneHz = 256; // Approximation to 261.62 Hz which is middle C
-    const toneVolume = 300;
-    const wavePeriod = samplesPerSecond / toneHz;
-    const halfWavePeriod = wavePeriod / 2;
-    var runningSampleIndex: u32 = 0;
+    var soundOutput = dsound.win32_sound_output{
+        .samplesPerSecond = samplesPerSecond,
+        .bytesPerSample = bytesPerSample,
+        .soundBufferSize = samplesPerSecond * bytesPerSample,
+        .toneHz = toneHz,
+        .toneVolume = 2000,
+        .wavePeriod = samplesPerSecond / toneHz,
+        .runningSampleIndex = 0,
+    };
 
-    std.debug.print("hwp: {}\n", .{halfWavePeriod});
-
-    dsound.win32InitDSound(window, samplesPerSecond, soundBufferSize);
-    //GlobalSoundBuffer
-    var soundIsPlaying = false;
+    dsound.win32InitDSound(window, soundOutput.samplesPerSecond, soundOutput.soundBufferSize);
+    dsound.win32FillSoundBuffer(&soundOutput, 0, soundOutput.soundBufferSize) catch {};
+    dsound.IDirectSoundBuffer_Play(dsound.GlobalSoundBuffer, 0, 0, dsound.DSBPLAY_LOOPING) catch {};
 
     // Render stuff
 
@@ -294,47 +296,23 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         // Sound test stuff
         var PlayCursor: dsound.DWORD = undefined;
         var WriteCursor: dsound.DWORD = undefined;
+
         if (dsound.IDirectSoundBuffer_GetCurrentPosition(&PlayCursor, &WriteCursor)) {
-            const LockOffset: c_ulong = runningSampleIndex * bytesPerSample % soundBufferSize;
-            const BytesToWrite: c_ulong = if (LockOffset >= PlayCursor) (soundBufferSize - LockOffset + PlayCursor) else (PlayCursor - LockOffset);
-
-            var Region1: ?*c_void = undefined;
-            var Region1Size: u32 = undefined;
-            var Region2: ?*c_void = undefined;
-            var Region2Size: u32 = undefined;
-
-            if (dsound.IDirectSoundBuffer_Lock(dsound.GlobalSoundBuffer, LockOffset, BytesToWrite, &Region1, &Region1Size, &Region2, &Region2Size, 0)) {
-                const Region1SampleCount = Region1Size / bytesPerSample;
-                var sampleOut = @ptrCast([*c]c_short, @alignCast(@alignOf(c_short), Region1));
-                var sampleIndex: c_ulong = 0;
-                while (sampleIndex < Region1SampleCount) : (sampleIndex += 1) {
-                    var sampleValue: c_short = if (@mod(runningSampleIndex / halfWavePeriod, 2) != 0) toneVolume else -toneVolume;
-                    sampleOut.* = sampleValue;
-                    sampleOut += 1;
-                    sampleOut.* = sampleValue;
-                    runningSampleIndex += 1;
+            const lockOffset: dsound.DWORD = (soundOutput.runningSampleIndex * soundOutput.bytesPerSample) % soundOutput.soundBufferSize;
+            // TODO: make sure playcursor moved before filling the buffer
+            const bytesToWrite: dsound.DWORD = blk: {
+                if (lockOffset == PlayCursor) {
+                    break :blk 0;
+                } else if (lockOffset > PlayCursor) {
+                    break :blk soundOutput.soundBufferSize - lockOffset + PlayCursor;
+                } else {
+                    break :blk PlayCursor - lockOffset;
                 }
+            };
 
-                const Region2SampleCount = Region2Size / bytesPerSample;
-                sampleOut = @ptrCast([*c]c_short, @alignCast(@alignOf(c_short), Region2));
-                sampleIndex = 0;
-                while (sampleIndex < Region2SampleCount) : (sampleIndex += 1) {
-                    var sampleValue: c_short = if (@mod(runningSampleIndex / halfWavePeriod, 2) != 0) toneVolume else -toneVolume;
-                    sampleOut.* = sampleValue;
-                    sampleOut += 1;
-                    sampleOut.* = sampleValue;
-                    runningSampleIndex += 1;
-                }
-
-                dsound.IDirectSoundBuffer_Unlock(Region1, Region1Size, Region2, Region2Size) catch {};
-            } else |err| {}
-
+            dsound.win32FillSoundBuffer(&soundOutput, lockOffset, bytesToWrite) catch {};
             // /Sound stuff
         } else |err| {}
-        if (!soundIsPlaying) {
-            dsound.IDirectSoundBuffer_Play(dsound.GlobalSoundBuffer, 0, 0, dsound.DSBPLAY_LOOPING) catch {};
-            soundIsPlaying = true;
-        }
 
         const windowSize = Win32GetWindowSize(window);
         Win32UpdateWindow(deviceContext, windowSize.width, windowSize.height, &backBuffer, 0, 0, windowSize.width, windowSize.height);
