@@ -215,21 +215,27 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
     //defer _ = user32.ReleaseDC(window, deviceContext);
 
     // Sound Stuff
-    const samplesPerSecond = 48000;
-    const bytesPerSample = @sizeOf(u16) * 2;
-    const toneHz = 256; // Approximation to 261.62 Hz which is middle C
-    var soundOutput = dsound.win32_sound_output{
-        .samplesPerSecond = samplesPerSecond,
-        .bytesPerSample = bytesPerSample,
-        .soundBufferSize = samplesPerSecond * bytesPerSample,
-        .toneHz = toneHz,
-        .toneVolume = 2000,
-        .wavePeriod = samplesPerSecond / toneHz,
-        .runningSampleIndex = 0,
+
+    var soundOutput = blk: {
+        const samplesPerSecond = 48000;
+        const bytesPerSample = @sizeOf(u16) * 2;
+        const toneHz = 256; // Approximation to 261.62 Hz which is middle C
+        const wavePeriod = samplesPerSecond / toneHz;
+        break :blk dsound.win32_sound_output{
+            .samplesPerSecond = samplesPerSecond,
+            .bytesPerSample = bytesPerSample,
+            .soundBufferSize = samplesPerSecond * bytesPerSample,
+            .toneHz = toneHz,
+            .toneVolume = 2000,
+            .wavePeriod = wavePeriod,
+            .runningSampleIndex = 0,
+            .tSine = 2 * std.math.pi / @intToFloat(f32, wavePeriod),
+            .latencySampleCount = samplesPerSecond / 15,
+        };
     };
 
     dsound.win32InitDSound(window, soundOutput.samplesPerSecond, soundOutput.soundBufferSize);
-    dsound.win32FillSoundBuffer(&soundOutput, 0, soundOutput.soundBufferSize) catch {};
+    dsound.win32FillSoundBuffer(&soundOutput, 0, soundOutput.latencySampleCount * soundOutput.bytesPerSample) catch {};
     dsound.IDirectSoundBuffer_Play(dsound.GlobalSoundBuffer, 0, 0, dsound.DSBPLAY_LOOPING) catch {};
 
     // Render stuff
@@ -286,6 +292,9 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
                     };
                     xinput.setState(controllerIndex, &Vibration) catch {};
                 }
+
+                soundOutput.toneHz = @intCast(u32, 512 + 256 * @floatToInt(i32, (@intToFloat(f32, LeftStickY) / 30000)));
+                soundOutput.wavePeriod = soundOutput.samplesPerSecond / soundOutput.toneHz;
             } else |err| {
                 // Controller not available
             }
@@ -299,14 +308,14 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
 
         if (dsound.IDirectSoundBuffer_GetCurrentPosition(&PlayCursor, &WriteCursor)) {
             const lockOffset: dsound.DWORD = (soundOutput.runningSampleIndex * soundOutput.bytesPerSample) % soundOutput.soundBufferSize;
-            // TODO: make sure playcursor moved before filling the buffer
+            const targetCursor: dsound.DWORD = (PlayCursor + (soundOutput.latencySampleCount * soundOutput.bytesPerSample)) % soundOutput.soundBufferSize;
             const bytesToWrite: dsound.DWORD = blk: {
-                if (lockOffset == PlayCursor) {
+                if (lockOffset == targetCursor) {
                     break :blk 0;
-                } else if (lockOffset > PlayCursor) {
-                    break :blk soundOutput.soundBufferSize - lockOffset + PlayCursor;
+                } else if (lockOffset > targetCursor) {
+                    break :blk soundOutput.soundBufferSize - lockOffset + targetCursor;
                 } else {
-                    break :blk PlayCursor - lockOffset;
+                    break :blk targetCursor - lockOffset;
                 }
             };
 

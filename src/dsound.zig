@@ -76,6 +76,8 @@ pub const win32_sound_output = struct {
     toneVolume: i32,
     wavePeriod: u32,
     runningSampleIndex: u32,
+    tSine: f32,
+    latencySampleCount: u32,
 };
 
 pub fn win32InitDSound(window: HWND, samplesPerSecond: u32, bufferSize: DWORD) void {
@@ -151,14 +153,14 @@ pub fn win32FillSoundBuffer(soundOutput: *win32_sound_output, lockOffset: DWORD,
         var sampleOut = @ptrCast([*c]i16, @alignCast(@alignOf(i16), Region1));
         var sampleIndex: u32 = 0;
         while (sampleIndex < Region1SampleCount) : (sampleIndex +%= 1) {
-            var t: f32 = 2 * std.math.pi * @intToFloat(f32, soundOutput.runningSampleIndex) / @intToFloat(f32, soundOutput.wavePeriod); // time
-            var sineValue: f32 = @sin(t);
+            var sineValue: f32 = @sin(soundOutput.tSine);
             var sampleValue: i16 = @floatToInt(i16, sineValue * @intToFloat(f32, soundOutput.toneVolume));
             sampleOut.* = sampleValue;
             sampleOut += 1;
             sampleOut.* = sampleValue;
             sampleOut += 1;
 
+            soundOutput.tSine += 2 * std.math.pi / @intToFloat(f32, soundOutput.wavePeriod);
             soundOutput.runningSampleIndex +%= 1;
         }
         first = false;
@@ -167,14 +169,14 @@ pub fn win32FillSoundBuffer(soundOutput: *win32_sound_output, lockOffset: DWORD,
         sampleOut = @ptrCast([*c]i16, @alignCast(@alignOf(i16), Region2));
         sampleIndex = 0;
         while (sampleIndex < Region2SampleCount) : (sampleIndex +%= 1) {
-            var t: f32 = 2 * std.math.pi * @intToFloat(f32, soundOutput.runningSampleIndex) / @intToFloat(f32, soundOutput.wavePeriod); // time
-            var sineValue: f32 = @sin(t);
+            var sineValue: f32 = @sin(soundOutput.tSine);
             var sampleValue: i16 = @floatToInt(i16, sineValue * @intToFloat(f32, soundOutput.toneVolume));
             sampleOut.* = sampleValue;
             sampleOut += 1;
             sampleOut.* = sampleValue;
             sampleOut += 1;
 
+            soundOutput.tSine += 2 * std.math.pi / @intToFloat(f32, soundOutput.wavePeriod);
             soundOutput.runningSampleIndex +%= 1;
         }
 
