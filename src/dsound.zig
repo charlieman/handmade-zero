@@ -153,8 +153,8 @@ pub fn win32FillSoundBuffer(soundOutput: *win32_sound_output, lockOffset: DWORD,
         var sampleOut = @ptrCast([*c]i16, @alignCast(@alignOf(i16), Region1));
         var sampleIndex: u32 = 0;
         while (sampleIndex < Region1SampleCount) : (sampleIndex +%= 1) {
-            var sineValue: f32 = @sin(soundOutput.tSine);
-            var sampleValue: i16 = @floatToInt(i16, sineValue * @intToFloat(f32, soundOutput.toneVolume));
+            const sineValue: f32 = @sin(soundOutput.tSine);
+            const sampleValue: i16 = @floatToInt(i16, sineValue * @intToFloat(f32, soundOutput.toneVolume));
             sampleOut.* = sampleValue;
             sampleOut += 1;
             sampleOut.* = sampleValue;
@@ -169,8 +169,8 @@ pub fn win32FillSoundBuffer(soundOutput: *win32_sound_output, lockOffset: DWORD,
         sampleOut = @ptrCast([*c]i16, @alignCast(@alignOf(i16), Region2));
         sampleIndex = 0;
         while (sampleIndex < Region2SampleCount) : (sampleIndex +%= 1) {
-            var sineValue: f32 = @sin(soundOutput.tSine);
-            var sampleValue: i16 = @floatToInt(i16, sineValue * @intToFloat(f32, soundOutput.toneVolume));
+            const sineValue: f32 = @sin(soundOutput.tSine);
+            const sampleValue: i16 = @floatToInt(i16, sineValue * @intToFloat(f32, soundOutput.toneVolume));
             sampleOut.* = sampleValue;
             sampleOut += 1;
             sampleOut.* = sampleValue;
