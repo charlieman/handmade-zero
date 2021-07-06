@@ -184,6 +184,7 @@ pub fn main() !void {
 }
 
 pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: user32.PWSTR, cmdShow: c_int) c_int {
+    var counterPerSecond = windows.QueryPerformanceFrequency();
     xinput.win32LoadXinput();
 
     Win32ResizeDIBSection(&backBuffer, 1280, 720);
@@ -245,6 +246,8 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
     var xOffsetValue: i8 = 0;
     var yOffsetValue: i8 = 0;
 
+    //var lastCycleCounter = w.__rdtsc();
+    var lastCounter = windows.QueryPerformanceCounter();
     running = true;
     while (running) {
         var message: user32.MSG = undefined;
@@ -327,6 +330,17 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         Win32UpdateWindow(deviceContext, windowSize.width, windowSize.height, &backBuffer, 0, 0, windowSize.width, windowSize.height);
         xOffset +%= xOffsetValue;
         yOffset +%= yOffsetValue;
+
+        // var currentCycleCounter = w.__rdtsc();
+        var currentCounter = windows.QueryPerformanceCounter();
+        var counterElapsed = currentCounter - lastCounter;
+        // var cycleElapsed = currentCycleCounter - lastCycleCounter;
+        var msPerFrame = 1000 * counterElapsed / counterPerSecond;
+        var fps = counterPerSecond / counterElapsed;
+        //var mcpf = cycleElapsed / (1000 * 1000);
+        std.debug.print("ms/f: {d}, fps: {d}, mc/f: {d}\n", .{ msPerFrame, fps, 0 });
+        lastCounter = currentCounter;
+        // lastCycleCounter = currentCycleCounter;
     }
     return 0;
 }
