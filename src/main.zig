@@ -82,6 +82,10 @@ fn Win32ResizeDIBSection(buffer: *OffscreenBuffer, width: i32, height: i32) void
 }
 
 fn Win32UpdateWindow(hdc: user32.HDC, windowWidth: i32, windowHeight: i32, buffer: *OffscreenBuffer, x: i32, y: i32, width: i32, height: i32) void {
+    _ = x;
+    _ = y;
+    _ = width;
+    _ = height;
     // TODO: Aspect ratio correction
     _ = w.stretchDIBits(hdc, 0, 0, windowWidth, windowHeight, 0, 0, buffer.width, buffer.height, buffer.memory.?.ptr, &buffer.info, w.DIB_RGB_COLORS, w.SRCCOPY) catch unreachable;
 }
@@ -116,7 +120,7 @@ fn Win32MainWindowCallback(window: user32.HWND, message: c_uint, wparam: usize, 
             const wasDown = (lparam & (1 << 30)) != 0;
             const isDown = (lparam & (1 << 31)) == 0;
             const justPressed = isDown and !wasDown;
-            const justReleased = !isDown and wasDown;
+            //const justReleased = !isDown and wasDown;
             switch (vKCode) {
                 'W' => std.debug.print("W\n", .{}),
                 'A' => std.debug.print("A\n", .{}),
@@ -184,6 +188,9 @@ pub fn main() !void {
 }
 
 pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: user32.PWSTR, cmdShow: c_int) c_int {
+    _ = prev;
+    _ = cmdLine;
+    _ = cmdShow;
     var counterPerSecond = windows.QueryPerformanceFrequency();
     xinput.win32LoadXinput();
 
@@ -202,7 +209,7 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         .hbrBackground = null,
         .hIconSm = null,
     };
-    const registeredClass = user32.registerClassExW(&windowClass) catch |err| {
+    _ = user32.registerClassExW(&windowClass) catch |err| {
         std.debug.print("error registerClassExW: {}", .{err});
         return 1;
     };
@@ -268,24 +275,24 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
             var controllerState: xinput.XINPUT_STATE = undefined;
             if (xinput.getState(controllerIndex, &controllerState)) {
                 const Pad = controllerState.Gamepad;
-                const Up: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_UP != 0;
-                const Down: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_DOWN != 0;
-                const Left: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_LEFT != 0;
-                const Right: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_RIGHT != 0;
-                const Start: bool = Pad.wButtons & xinput.GAMEPAD_START != 0;
-                const Back: bool = Pad.wButtons & xinput.GAMEPAD_BACK != 0;
-                const LeftShoulder: bool = Pad.wButtons & xinput.GAMEPAD_LEFT_SHOULDER != 0;
-                const RightShoulder: bool = Pad.wButtons & xinput.GAMEPAD_RIGHT_SHOULDER != 0;
+                // const Up: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_UP != 0;
+                // const Down: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_DOWN != 0;
+                // const Left: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_LEFT != 0;
+                // const Right: bool = Pad.wButtons & xinput.GAMEPAD_DPAD_RIGHT != 0;
+                // const Start: bool = Pad.wButtons & xinput.GAMEPAD_START != 0;
+                // const Back: bool = Pad.wButtons & xinput.GAMEPAD_BACK != 0;
+                // const LeftShoulder: bool = Pad.wButtons & xinput.GAMEPAD_LEFT_SHOULDER != 0;
+                // const RightShoulder: bool = Pad.wButtons & xinput.GAMEPAD_RIGHT_SHOULDER != 0;
                 const AButton: bool = Pad.wButtons & xinput.GAMEPAD_A != 0;
-                const BButton: bool = Pad.wButtons & xinput.GAMEPAD_B != 0;
-                const XButton: bool = Pad.wButtons & xinput.GAMEPAD_X != 0;
-                const YButton: bool = Pad.wButtons & xinput.GAMEPAD_Y != 0;
+                // const BButton: bool = Pad.wButtons & xinput.GAMEPAD_B != 0;
+                // const XButton: bool = Pad.wButtons & xinput.GAMEPAD_X != 0;
+                // const YButton: bool = Pad.wButtons & xinput.GAMEPAD_Y != 0;
 
                 const LeftStickX: i16 = Pad.sThumbLX;
                 const LeftStickY: i16 = Pad.sThumbLY;
 
-                xOffsetValue = @truncate(i8, @divTrunc(LeftStickX, 32512 / 5));
-                yOffsetValue = @truncate(i8, @divTrunc(LeftStickY, 32512 / 5));
+                xOffsetValue = @truncate(i8, @divTrunc(LeftStickX, 32512 / 8));
+                yOffsetValue = @truncate(i8, @divTrunc(LeftStickY, 32512 / 8));
 
                 // Vibrate if we are pressing the A button
                 if (AButton) {
@@ -298,7 +305,7 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
 
                 soundOutput.toneHz = @intCast(u32, 512 + 256 * @floatToInt(i32, (@intToFloat(f32, LeftStickY) / 30000)));
                 soundOutput.wavePeriod = soundOutput.samplesPerSecond / soundOutput.toneHz;
-            } else |err| {
+            } else |_| {
                 // Controller not available
             }
         }
@@ -324,7 +331,7 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
 
             dsound.win32FillSoundBuffer(&soundOutput, lockOffset, bytesToWrite) catch {};
             // /Sound stuff
-        } else |err| {}
+        } else |_| {}
 
         const windowSize = Win32GetWindowSize(window);
         Win32UpdateWindow(deviceContext, windowSize.width, windowSize.height, &backBuffer, 0, 0, windowSize.width, windowSize.height);

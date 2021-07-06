@@ -50,10 +50,14 @@ pub const GAMEPAD_RIGHT_THUMB_DEADZONE = 8689;
 pub const GAMEPAD_TRIGGER_THRESHOLD = 30;
 
 fn dummy_x_input_get_state(dwUserIndex: DWORD, pState: [*c]XINPUT_STATE) DWORD {
+    _ = dwUserIndex;
+    _ = pState;
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 
 fn dummy_x_input_set_state(dwUserIndex: DWORD, pVibration: [*c]const XINPUT_VIBRATION) DWORD {
+    _ = dwUserIndex;
+    _ = pVibration;
     return ERROR_DEVICE_NOT_CONNECTED;
 }
 

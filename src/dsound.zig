@@ -27,7 +27,7 @@ pub const IDirectSound = extern struct {
     lpVtbl: *IDirectSoundVtbl,
 };
 
-pub fn succeeded(result: HRESULT) callconv(.Inline) bool {
+pub inline fn succeeded(result: HRESULT) bool {
     return result >= 0;
 }
 
@@ -42,7 +42,7 @@ pub fn IDirectSoundBuffer_Play(p: *c.IDirectSoundBuffer, dwReserved1: c_ulong, d
     return error.DirectSoundError;
 }
 
-pub fn IDirectSoundBuffer_Lock(p: anytype, a: anytype, b: anytype, c_: anytype, d: anytype, e: anytype, f: anytype, g: anytype) callconv(.Inline) !void {
+pub inline fn IDirectSoundBuffer_Lock(p: anytype, a: anytype, b: anytype, c_: anytype, d: anytype, e: anytype, f: anytype, g: anytype) !void {
     const r = p.*.lpVtbl.*.Lock.?(p, a, b, c_, d, e, f, g);
     if (succeeded(r)) {
         return;
@@ -50,7 +50,7 @@ pub fn IDirectSoundBuffer_Lock(p: anytype, a: anytype, b: anytype, c_: anytype, 
     std.debug.print("IDirectSoundBuffer_Lock Error: {}\n", .{r});
     return error.DirectSoundError;
 }
-pub fn IDirectSoundBuffer_Unlock(a: anytype, b: anytype, c_: anytype, d: anytype) callconv(.Inline) !void {
+pub inline fn IDirectSoundBuffer_Unlock(a: anytype, b: anytype, c_: anytype, d: anytype) !void {
     const r = GlobalSoundBuffer.*.lpVtbl.*.Unlock.?(GlobalSoundBuffer, a, b, c_, d);
     if (succeeded(r)) {
         return;
@@ -59,7 +59,7 @@ pub fn IDirectSoundBuffer_Unlock(a: anytype, b: anytype, c_: anytype, d: anytype
     return error.DirectSoundError;
 }
 
-pub fn IDirectSoundBuffer_GetCurrentPosition(a: anytype, b: anytype) callconv(.Inline) !void {
+pub inline fn IDirectSoundBuffer_GetCurrentPosition(a: anytype, b: anytype) !void {
     const r = GlobalSoundBuffer.*.lpVtbl.*.GetCurrentPosition.?(GlobalSoundBuffer, a, b);
     if (succeeded(r)) {
         return;
@@ -181,5 +181,5 @@ pub fn win32FillSoundBuffer(soundOutput: *win32_sound_output, lockOffset: DWORD,
         }
 
         IDirectSoundBuffer_Unlock(Region1, Region1Size, Region2, Region2Size) catch {};
-    } else |err| {}
+    } else |_| {}
 }
