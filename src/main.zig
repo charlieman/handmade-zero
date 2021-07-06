@@ -177,20 +177,8 @@ fn Win32MainWindowCallback(window: user32.HWND, message: c_uint, wparam: usize, 
     return result;
 }
 
-// Using wWinMain directly without main prevents you from linking libc,
-// this hack let's you have both
 pub fn main() !void {
-    if (std.start.call_wWinMain() == 0) {
-        return;
-    } else {
-        return error.ExitError;
-    }
-}
-
-pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: user32.PWSTR, cmdShow: c_int) c_int {
-    _ = prev;
-    _ = cmdLine;
-    _ = cmdShow;
+    const instance = @ptrCast(user32.HINSTANCE, std.os.windows.kernel32.GetModuleHandleW(null).?);
     var counterPerSecond = windows.QueryPerformanceFrequency();
     xinput.win32LoadXinput();
 
@@ -211,12 +199,12 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
     };
     _ = user32.registerClassExW(&windowClass) catch |err| {
         std.debug.print("error registerClassExW: {}", .{err});
-        return 1;
+        return err;
     };
 
     var window = user32.createWindowExW(0, windowClass.lpszClassName, window_title, user32.WS_OVERLAPPEDWINDOW | user32.WS_VISIBLE, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, user32.CW_USEDEFAULT, null, null, instance, null) catch |err| {
         std.debug.print("error createWindowExW: {}", .{err});
-        return 1;
+        return err;
     };
     // CS_OWNDC in windowClass.style lets us keep the deviceContext forever
     const deviceContext = user32.getDC(window) catch unreachable;
@@ -267,7 +255,7 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
             _ = user32.dispatchMessageW(&message);
         } else |err| {
             std.debug.print("error getMessageW: {}", .{err});
-            return 1;
+            return err;
         }
         // Controller
         var controllerIndex: u32 = 0;
@@ -349,5 +337,4 @@ pub fn wWinMain(instance: user32.HINSTANCE, prev: ?user32.HINSTANCE, cmdLine: us
         lastCounter = currentCounter;
         // lastCycleCounter = currentCycleCounter;
     }
-    return 0;
 }
