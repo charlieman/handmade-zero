@@ -9,9 +9,12 @@ const L = std.unicode.utf8ToUtf16LeStringLiteral;
 //     @cInclude("wingdi.h");
 //     @cInclude("xinput.h");
 // });
-const allocator = std.heap.page_allocator;
+var allocator: *std.mem.Allocator = undefined;
+//const allocator = std.heap.page_allocator;
+//const allocator = std.testing.allocator;
 
 const GameOffscreenBuffer = @import("handmade.zig").GameOffscreenBuffer;
+const GameSoundOutputBuffer = @import("handmade.zig").GameSoundOutputBuffer;
 const GameUpdateAndRender = @import("handmade.zig").GameUpdateAndRender;
 
 const OffscreenBuffer = struct {
@@ -163,13 +166,90 @@ fn Win32MainWindowCallback(window: user32.HWND, message: c_uint, wparam: usize, 
     return result;
 }
 
+fn win32FillSoundBuffer(soundOutput: *dsound.win32_sound_output, lockOffset: w.DWORD, bytesToWrite: w.DWORD, sourceBuffer: *GameSoundOutputBuffer) !void {
+    var Region1: ?*c_void = undefined;
+    var Region1Size: u32 = undefined;
+    var Region2: ?*c_void = undefined;
+    var Region2Size: u32 = undefined;
+
+    if (bytesToWrite == 0) return;
+
+    if (dsound.IDirectSoundBuffer_Lock(dsound.GlobalSoundBuffer, lockOffset, bytesToWrite, &Region1, &Region1Size, &Region2, &Region2Size, 0)) {
+        var sourceIndex: usize = 0;
+
+        const Region1SampleCount = Region1Size / soundOutput.bytesPerSample;
+        var destSample = @ptrCast([*c]i16, @alignCast(@alignOf(i16), Region1));
+        var sampleIndex: u32 = 0;
+
+        while (sampleIndex < Region1SampleCount) : (sampleIndex +%= 1) {
+            destSample.* = sourceBuffer.samples.*[sourceIndex];
+            destSample += 1;
+            sourceIndex += 1;
+            destSample.* = sourceBuffer.samples.*[sourceIndex];
+            destSample += 1;
+            sourceIndex += 1;
+            soundOutput.runningSampleIndex +%= 1;
+        }
+
+        const Region2SampleCount = Region2Size / soundOutput.bytesPerSample;
+        destSample = @ptrCast([*c]i16, @alignCast(@alignOf(i16), Region2));
+        sampleIndex = 0;
+        while (sampleIndex < Region2SampleCount) : (sampleIndex +%= 1) {
+            destSample.* = sourceBuffer.samples.*[sourceIndex];
+            destSample += 1;
+            sourceIndex += 1;
+            destSample.* = sourceBuffer.samples.*[sourceIndex];
+            destSample += 1;
+            sourceIndex += 1;
+            soundOutput.runningSampleIndex +%= 1;
+        }
+
+        dsound.IDirectSoundBuffer_Unlock(Region1, Region1Size, Region2, Region2Size) catch {};
+    } else |_| {}
+}
+
+fn win32ClearSoundBuffer(soundOutput: *dsound.win32_sound_output) void {
+    var Region1: ?*c_void = undefined;
+    var Region1Size: u32 = undefined;
+    var Region2: ?*c_void = undefined;
+    var Region2Size: u32 = undefined;
+    if (dsound.IDirectSoundBuffer_Lock(dsound.GlobalSoundBuffer, 0, soundOutput.soundBufferSize, &Region1, &Region1Size, &Region2, &Region2Size, 0)) {
+        const Region1SampleCount = Region1Size / soundOutput.bytesPerSample;
+        var destSample = @ptrCast([*c]i16, @alignCast(@alignOf(i16), Region1));
+        var sampleIndex: u32 = 0;
+        while (sampleIndex < Region1SampleCount) : (sampleIndex +%= 1) {
+            destSample.* = 0;
+            destSample += 1;
+            destSample.* = 0;
+            destSample += 1;
+        }
+
+        const Region2SampleCount = Region2Size / soundOutput.bytesPerSample;
+        destSample = @ptrCast([*c]i16, @alignCast(@alignOf(i16), Region2));
+        sampleIndex = 0;
+        while (sampleIndex < Region2SampleCount) : (sampleIndex +%= 1) {
+            destSample.* = 0;
+            destSample += 1;
+            destSample.* = 0;
+            destSample += 1;
+        }
+
+        dsound.IDirectSoundBuffer_Unlock(Region1, Region1Size, Region2, Region2Size) catch {};
+    } else |_| {}
+}
+
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
+    allocator = &gpa.allocator;
+
     const instance = @ptrCast(user32.HINSTANCE, w.kernel32.GetModuleHandleW(null).?);
     var counterPerSecond = w.QueryPerformanceFrequency();
     xinput.win32LoadXinput();
 
     Win32ResizeDIBSection(&backBuffer, 1280, 720);
-    //defer Win32ResizeDIBSection(&backBuffer, 0, 0); // Frees the backBuffer.memory at the end
+    defer Win32ResizeDIBSection(&backBuffer, 0, 0); // Frees the backBuffer.memory at the end
+
     const window_title = L("Handmade Zero");
 
     var windowClass: user32.WNDCLASSEXW = .{
@@ -217,8 +297,11 @@ pub fn main() !void {
     };
 
     dsound.win32InitDSound(window, soundOutput.samplesPerSecond, soundOutput.soundBufferSize);
-    dsound.win32FillSoundBuffer(&soundOutput, 0, soundOutput.latencySampleCount * soundOutput.bytesPerSample) catch {};
+    win32ClearSoundBuffer(&soundOutput);
     dsound.IDirectSoundBuffer_Play(dsound.GlobalSoundBuffer, 0, 0, dsound.DSBPLAY_LOOPING) catch {};
+
+    var samples: []i16 = try allocator.alloc(i16, soundOutput.soundBufferSize);
+    defer allocator.free(samples);
 
     // Render stuff
 
@@ -283,25 +366,18 @@ pub fn main() !void {
                 // Controller not available
             }
         }
-        //
-        //RenderWeirdGradient(&backBuffer, xOffset, yOffset);
-        var buffer: GameOffscreenBuffer = .{
-            .memory = &backBuffer.memory,
-            .width = backBuffer.width,
-            .height = backBuffer.height,
-            .pitch = backBuffer.pitch,
-        };
 
-        GameUpdateAndRender(&buffer, xOffset, yOffset);
-
-        // Sound test stuff
-        var PlayCursor: dsound.DWORD = undefined;
-        var WriteCursor: dsound.DWORD = undefined;
-
+        // Sound stuff
+        var PlayCursor: w.DWORD = undefined;
+        var WriteCursor: w.DWORD = undefined;
+        var lockOffset: w.DWORD = undefined;
+        var targetCursor: w.DWORD = undefined;
+        var bytesToWrite: w.DWORD = undefined;
+        var soundIsValid = false;
         if (dsound.IDirectSoundBuffer_GetCurrentPosition(&PlayCursor, &WriteCursor)) {
-            const lockOffset: dsound.DWORD = (soundOutput.runningSampleIndex * soundOutput.bytesPerSample) % soundOutput.soundBufferSize;
-            const targetCursor: dsound.DWORD = (PlayCursor + (soundOutput.latencySampleCount * soundOutput.bytesPerSample)) % soundOutput.soundBufferSize;
-            const bytesToWrite: dsound.DWORD = blk: {
+            lockOffset = (soundOutput.runningSampleIndex * soundOutput.bytesPerSample) % soundOutput.soundBufferSize;
+            targetCursor = (PlayCursor + (soundOutput.latencySampleCount * soundOutput.bytesPerSample)) % soundOutput.soundBufferSize;
+            bytesToWrite = blk: {
                 if (lockOffset == targetCursor) {
                     break :blk 0;
                 } else if (lockOffset > targetCursor) {
@@ -310,9 +386,26 @@ pub fn main() !void {
                     break :blk targetCursor - lockOffset;
                 }
             };
+            soundIsValid = true;
+        } else |_| {}
 
-            dsound.win32FillSoundBuffer(&soundOutput, lockOffset, bytesToWrite) catch {};
-            // /Sound stuff
+        var soundBuffer: GameSoundOutputBuffer = .{
+            .samplesPerSecond = soundOutput.samplesPerSecond,
+            .sampleCount = @divTrunc(@intCast(i32, bytesToWrite), @intCast(i32, soundOutput.bytesPerSample)),
+            .samples = &samples,
+        };
+
+        var buffer: GameOffscreenBuffer = .{
+            .memory = &backBuffer.memory,
+            .width = backBuffer.width,
+            .height = backBuffer.height,
+            .pitch = backBuffer.pitch,
+        };
+
+        GameUpdateAndRender(&buffer, xOffset, yOffset, &soundBuffer, soundOutput.toneHz);
+
+        if (soundIsValid) {
+            win32FillSoundBuffer(&soundOutput, lockOffset, bytesToWrite, &soundBuffer) catch {};
         } else |_| {}
 
         const windowSize = Win32GetWindowSize(window);
@@ -327,9 +420,9 @@ pub fn main() !void {
         var msPerFrame = 1000 * counterElapsed / counterPerSecond;
         var fps = counterPerSecond / counterElapsed;
         //var mcpf = cycleElapsed / (1000 * 1000);
-        //std.debug.print("ms/f: {d}, fps: {d}, mc/f: {d}\n", .{ msPerFrame, fps, 0 });
-        _ = msPerFrame;
-        _ = fps;
+        if (false) {
+            std.debug.print("ms/f: {d}, fps: {d}, mc/f: {d}\n", .{ msPerFrame, fps, 0 });
+        }
         lastCounter = currentCounter;
         // lastCycleCounter = currentCycleCounter;
     }
