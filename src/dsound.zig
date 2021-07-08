@@ -72,11 +72,7 @@ pub const win32_sound_output = struct {
     samplesPerSecond: u32,
     bytesPerSample: u32,
     soundBufferSize: DWORD,
-    toneHz: u32,
-    toneVolume: i32,
-    wavePeriod: u32,
     runningSampleIndex: u32,
-    tSine: f32,
     latencySampleCount: u32,
 };
 

@@ -13,7 +13,9 @@ var allocator: *std.mem.Allocator = undefined;
 //const allocator = std.heap.page_allocator;
 //const allocator = std.testing.allocator;
 
+const GameInput = @import("handmade.zig").GameInput;
 const GameOffscreenBuffer = @import("handmade.zig").GameOffscreenBuffer;
+const GameButtonState = @import("handmade.zig").GameButtonState;
 const GameSoundOutputBuffer = @import("handmade.zig").GameSoundOutputBuffer;
 const GameUpdateAndRender = @import("handmade.zig").GameUpdateAndRender;
 
@@ -238,6 +240,11 @@ fn win32ClearSoundBuffer(soundOutput: *dsound.win32_sound_output) void {
     } else |_| {}
 }
 
+fn Win32ProcessXInputDigitalButton(xinputButtonState: w.DWORD, oldState: *GameButtonState, buttonBit: w.DWORD, newState: *GameButtonState) void {
+    newState.endedDown = (xinputButtonState & buttonBit) == buttonBit;
+    newState.halfTransitionCounter = if (oldState.endedDown != newState.endedDown) 1 else 0;
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
@@ -281,17 +288,11 @@ pub fn main() !void {
     var soundOutput = blk: {
         const samplesPerSecond = 48000;
         const bytesPerSample = @sizeOf(u16) * 2;
-        const toneHz = 256; // Approximation to 261.62 Hz which is middle C
-        const wavePeriod = samplesPerSecond / toneHz;
         break :blk dsound.win32_sound_output{
             .samplesPerSecond = samplesPerSecond,
             .bytesPerSample = bytesPerSample,
             .soundBufferSize = samplesPerSecond * bytesPerSample,
-            .toneHz = toneHz,
-            .toneVolume = 2000,
-            .wavePeriod = wavePeriod,
             .runningSampleIndex = 0,
-            .tSine = 2 * std.math.pi / @intToFloat(f32, wavePeriod),
             .latencySampleCount = samplesPerSecond / 15,
         };
     };
@@ -303,12 +304,9 @@ pub fn main() !void {
     var samples: []i16 = try allocator.alloc(i16, soundOutput.soundBufferSize);
     defer allocator.free(samples);
 
-    // Render stuff
-
-    var xOffset: i8 = 0;
-    var yOffset: i8 = 0;
-    var xOffsetValue: i8 = 0;
-    var yOffsetValue: i8 = 0;
+    var inputs: [2]GameInput = .{ std.mem.zeroes(GameInput), std.mem.zeroes(GameInput) };
+    var newInput: *GameInput = &inputs[1];
+    var oldInput: *GameInput = &inputs[0];
 
     //var lastCycleCounter = w.__rdtsc();
     var lastCounter = w.QueryPerformanceCounter();
@@ -327,8 +325,13 @@ pub fn main() !void {
             return err;
         }
         // Controller
+
+        var maxControllerCount = std.math.min(xinput.XUSER_MAX_COUNT, newInput.controllers.len);
         var controllerIndex: u32 = 0;
-        while (controllerIndex < xinput.XUSER_MAX_COUNT) : (controllerIndex += 1) {
+        while (controllerIndex < maxControllerCount) : (controllerIndex += 1) {
+            var oldController = &oldInput.controllers[@as(usize, controllerIndex)];
+            var newController = &newInput.controllers[@as(usize, controllerIndex)];
+
             var controllerState: xinput.XINPUT_STATE = undefined;
             if (xinput.getState(controllerIndex, &controllerState)) {
                 const Pad = controllerState.Gamepad;
@@ -340,28 +343,32 @@ pub fn main() !void {
                 // const Back: bool = Pad.wButtons & xinput.GAMEPAD_BACK != 0;
                 // const LeftShoulder: bool = Pad.wButtons & xinput.GAMEPAD_LEFT_SHOULDER != 0;
                 // const RightShoulder: bool = Pad.wButtons & xinput.GAMEPAD_RIGHT_SHOULDER != 0;
-                const AButton: bool = Pad.wButtons & xinput.GAMEPAD_A != 0;
+                // const AButton: bool = Pad.wButtons & xinput.GAMEPAD_A != 0;
                 // const BButton: bool = Pad.wButtons & xinput.GAMEPAD_B != 0;
                 // const XButton: bool = Pad.wButtons & xinput.GAMEPAD_X != 0;
                 // const YButton: bool = Pad.wButtons & xinput.GAMEPAD_Y != 0;
 
-                const LeftStickX: i16 = Pad.sThumbLX;
-                const LeftStickY: i16 = Pad.sThumbLY;
+                Win32ProcessXInputDigitalButton(Pad.wButtons, &oldController.buttons.up, xinput.GAMEPAD_DPAD_UP, &newController.buttons.up);
+                Win32ProcessXInputDigitalButton(Pad.wButtons, &oldController.buttons.down, xinput.GAMEPAD_DPAD_DOWN, &newController.buttons.down);
+                Win32ProcessXInputDigitalButton(Pad.wButtons, &oldController.buttons.left, xinput.GAMEPAD_DPAD_LEFT, &newController.buttons.left);
+                Win32ProcessXInputDigitalButton(Pad.wButtons, &oldController.buttons.right, xinput.GAMEPAD_DPAD_RIGHT, &newController.buttons.right);
+                Win32ProcessXInputDigitalButton(Pad.wButtons, &oldController.buttons.leftShoulder, xinput.GAMEPAD_START, &newController.buttons.leftShoulder);
+                Win32ProcessXInputDigitalButton(Pad.wButtons, &oldController.buttons.rightShoulder, xinput.GAMEPAD_BACK, &newController.buttons.rightShoulder);
 
-                xOffsetValue = @truncate(i8, @divTrunc(LeftStickX, 32512 / 8));
-                yOffsetValue = @truncate(i8, @divTrunc(LeftStickY, 32512 / 8));
+                newController.isAnalog = true;
+                newController.startX = oldController.endX;
+                newController.startY = oldController.endY;
+                // CHECK, it seems the max left is -32767 and not -32768
+                const leftStickX: f32 = if (Pad.sThumbLX < 0) (@intToFloat(f32, Pad.sThumbLX) / 32767) else (@intToFloat(f32, Pad.sThumbLX) / 32767);
+                const leftStickY: f32 = if (Pad.sThumbLY < 0) (@intToFloat(f32, Pad.sThumbLY) / 32767) else (@intToFloat(f32, Pad.sThumbLY) / 32767);
+                newController.minX = leftStickX;
+                newController.maxX = leftStickX;
+                newController.endX = leftStickX;
+                newController.minY = leftStickY;
+                newController.maxY = leftStickY;
+                newController.endY = leftStickY;
 
-                // Vibrate if we are pressing the A button
-                if (AButton) {
-                    const Vibration = xinput.XINPUT_VIBRATION{
-                        .wLeftMotorSpeed = 65535,
-                        .wRightMotorSpeed = 65535,
-                    };
-                    xinput.setState(controllerIndex, &Vibration) catch {};
-                }
-
-                soundOutput.toneHz = @intCast(u32, 512 + 256 * @floatToInt(i32, (@intToFloat(f32, LeftStickY) / 30000)));
-                soundOutput.wavePeriod = soundOutput.samplesPerSecond / soundOutput.toneHz;
+                // TODO: deadzone
             } else |_| {
                 // Controller not available
             }
@@ -402,7 +409,7 @@ pub fn main() !void {
             .pitch = backBuffer.pitch,
         };
 
-        GameUpdateAndRender(&buffer, xOffset, yOffset, &soundBuffer, soundOutput.toneHz);
+        GameUpdateAndRender(newInput, &buffer, &soundBuffer);
 
         if (soundIsValid) {
             win32FillSoundBuffer(&soundOutput, lockOffset, bytesToWrite, &soundBuffer) catch {};
@@ -410,8 +417,6 @@ pub fn main() !void {
 
         const windowSize = Win32GetWindowSize(window);
         Win32UpdateWindow(deviceContext, windowSize.width, windowSize.height, &backBuffer, 0, 0, windowSize.width, windowSize.height);
-        xOffset -%= xOffsetValue;
-        yOffset +%= yOffsetValue;
 
         // var currentCycleCounter = w.__rdtsc();
         var currentCounter = w.QueryPerformanceCounter();
@@ -425,5 +430,9 @@ pub fn main() !void {
         }
         lastCounter = currentCounter;
         // lastCycleCounter = currentCycleCounter;
+
+        var temp = oldInput;
+        oldInput = newInput;
+        newInput = temp;
     }
 }
